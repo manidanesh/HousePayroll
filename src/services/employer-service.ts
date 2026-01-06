@@ -12,6 +12,8 @@ export interface Employer {
     defaultHourlyRate: number;
     federalWithholdingEnabled: boolean;
     coloradoSutaRate: number;
+    holidayPayMultiplier: number;
+    weekendPayMultiplier: number;
     createdAt: string;
 }
 
@@ -77,6 +79,8 @@ export class EmployerService {
             defaultHourlyRate: row.default_hourly_rate,
             federalWithholdingEnabled: row.federal_withholding_enabled === 1,
             coloradoSutaRate: row.colorado_suta_rate,
+            holidayPayMultiplier: row.holiday_pay_multiplier || 1.0,
+            weekendPayMultiplier: row.weekend_pay_multiplier || 1.0,
             createdAt: row.created_at,
         };
     }
@@ -91,6 +95,8 @@ export class EmployerService {
         defaultHourlyRate?: number;
         federalWithholdingEnabled?: boolean;
         coloradoSutaRate?: number;
+        holidayPayMultiplier?: number;
+        weekendPayMultiplier?: number;
     }): Employer {
         const db = getDatabase();
         const current = this.getEmployer();
@@ -125,6 +131,14 @@ export class EmployerService {
         if (data.coloradoSutaRate !== undefined) {
             updates.push('colorado_suta_rate = ?');
             values.push(data.coloradoSutaRate);
+        }
+        if (data.holidayPayMultiplier !== undefined) {
+            updates.push('holiday_pay_multiplier = ?');
+            values.push(data.holidayPayMultiplier);
+        }
+        if (data.weekendPayMultiplier !== undefined) {
+            updates.push('weekend_pay_multiplier = ?');
+            values.push(data.weekendPayMultiplier);
         }
 
         if (updates.length === 0) {

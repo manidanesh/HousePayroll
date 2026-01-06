@@ -510,3 +510,153 @@ body {
 .caregivers-list {
   margin-top: 20px;
 }
+
+/* Time Tracking */
+.time-tracking-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.time-tracking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.time-tracking-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.date-selector {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.date-selector label {
+  font-size: 15px;
+  font-weight: 500;
+  color: #555;
+}
+
+.date-input {
+  padding: 10px 16px;
+  font-size: 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.time-entries-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  margin-bottom: 30px;
+}
+
+.time-entries-table thead {
+  background: #f8f8f8;
+}
+
+.time-entries-table th {
+  padding: 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.time-entries-table td {
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+  font-size: 15px;
+}
+
+.time-entries-table tr:last-child td {
+  border-bottom: none;
+}
+
+.time-entries-table tr.finalized {
+  background: #fafafa;
+}
+
+.time-entries-table tr:hover {
+  background: #f9f9f9;
+}
+
+.status-badge.finalized {
+  background: #e8f4fd;
+  color: #0366d6;
+}
+
+.status-badge.draft {
+  background: #fff8e1;
+  color: #f57c00;
+}
+
+.time-entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Weekly Summary */
+.weekly-summary {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.weekly-summary h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 16px;
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.summary-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  font-size: 13px;
+  text-transform: uppercase;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.summary-table td {
+  padding: 12px;
+  color: #333;
+  font-size: 15px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.summary-table tr:last-child td {
+  border-bottom: none;
+}
+
+.time-entries-list {
+  margin-top: 20px;
+}

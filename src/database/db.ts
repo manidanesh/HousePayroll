@@ -9,19 +9,19 @@ let db: Database.Database | null = null;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
 export function getDatabase(): Database.Database {
-    if (!db) {
-        const dbPath = path.join(app.getPath('userData'), 'payroll.db');
-        db = new Database(dbPath);
-        db.pragma('journal_mode = WAL');
-    }
-    return db;
+  if (!db) {
+    const dbPath = path.join(app.getPath('userData'), 'payroll.db');
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+  }
+  return db;
 }
 
 export function initializeDatabase() {
-    const database = getDatabase();
+  const database = getDatabase();
 
-    // Create employers table
-    database.exec(`
+  // Create employers table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS employers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       display_name TEXT NOT NULL,
@@ -34,8 +34,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create caregivers table
-    database.exec(`
+  // Create caregivers table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS caregivers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       full_legal_name TEXT NOT NULL,
@@ -48,8 +48,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create time_entries table
-    database.exec(`
+  // Create time_entries table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS time_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       caregiver_id INTEGER NOT NULL,
@@ -62,8 +62,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create payroll_records table
-    database.exec(`
+  // Create payroll_records table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS payroll_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       caregiver_id INTEGER NOT NULL,
@@ -88,8 +88,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create tax_configurations table
-    database.exec(`
+  // Create tax_configurations table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS tax_configurations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       version TEXT NOT NULL,
@@ -103,8 +103,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create audit_log table
-    database.exec(`
+  // Create audit_log table
+  database.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       table_name TEXT NOT NULL,
@@ -116,8 +116,8 @@ export function initializeDatabase() {
     )
   `);
 
-    // Create auth table for PIN
-    database.exec(`
+  // Create auth table for PIN
+  database.exec(`
     CREATE TABLE IF NOT EXISTS auth (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pin_hash TEXT NOT NULL,
@@ -126,37 +126,56 @@ export function initializeDatabase() {
     )
   `);
 
-    // Insert default tax configuration if not exists
-    const taxConfig = database.prepare('SELECT COUNT(*) as count FROM tax_configurations').get() as { count: number };
-    if (taxConfig.count === 0) {
-        database.prepare(`
+  // Insert default tax configuration if not exists
+  const taxConfig = database.prepare('SELECT COUNT(*) as count FROM tax_configurations').get() as { count: number };
+  if (taxConfig.count === 0) {
+    database.prepare(`
       INSERT INTO tax_configurations (version, ss_rate_employee, ss_rate_employer, medicare_rate_employee, medicare_rate_employer, futa_rate, effective_date)
       VALUES (?, ?, ?, ?, ?, ?, date('now'))
     `).run('v1.0', 0.062, 0.062, 0.0145, 0.0145, 0.006);
-    }
+  }
 
-    console.log('Database initialized successfully');
+  // Migration: Add multiplier columns to employers table if they don't exist
+  try {
+    database.exec(`
+      ALTER TABLE employers ADD COLUMN holiday_pay_multiplier REAL DEFAULT 1.0
+    `);
+    console.log('Added holiday_pay_multiplier column to employers table');
+  } catch (err) {
+    // Column already exists, ignore error
+  }
+
+  try {
+    database.exec(`
+      ALTER TABLE employers ADD COLUMN weekend_pay_multiplier REAL DEFAULT 1.0
+    `);
+    console.log('Added weekend_pay_multiplier column to employers table');
+  } catch (err) {
+    // Column already exists, ignore error
+  }
+
+  console.log('Database initialized successfully');
 }
 
 // Encryption utilities
 export function encrypt(text: string): string {
-    const algorithm = 'aes-256-cbc';
-    const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(algorithm, key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
+  const algorithm = 'aes-256-cbc';
+  const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(algorithm, key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
 }
 
 export function decrypt(encryptedText: string): string {
-    const algorithm = 'aes-256-cbc';
-    const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
-    const parts = encryptedText.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const encrypted = parts[1];
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+  const algorithm = 'aes-256-cbc';
+  const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
+  const parts = encryptedText.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const encrypted = parts[1];
+  const decipher = crypto.createDecipheriv(algorithm, key, iv);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
