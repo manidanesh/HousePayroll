@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TimeEntryService, TimeEntryWithCaregiver } from '../../services/time-entry-service';
 import { CaregiverService, Caregiver } from '../../services/caregiver-service';
+import { HolidayCalendar } from '../../utils/holiday-calendar';
 
 const TimeTracking: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<string>(getTodayDate());
@@ -55,10 +56,25 @@ const TimeTracking: React.FC = () => {
         c => !timeEntries.some(te => te.caregiverId === c.id)
     );
 
+    // Get day type and holiday name for selected date
+    const dayType = HolidayCalendar.getDayType(selectedDate);
+    const holidayName = HolidayCalendar.getHolidayName(selectedDate);
+
     return (
         <div className="time-tracking-container">
             <div className="time-tracking-header">
-                <h2>Time Tracking</h2>
+                <div>
+                    <h2>Time Tracking</h2>
+                    {dayType !== 'regular' && (
+                        <div className="day-type-indicator">
+                            <span className={`day-type-badge ${dayType}`}>
+                                {dayType === 'holiday' ? `🎉 ${holidayName}` : '📅 Weekend'}
+                            </span>
+                            {dayType === 'holiday' && <span className="multiplier-note">Holiday pay rate applies</span>}
+                            {dayType === 'weekend' && <span className="multiplier-note">Weekend pay rate applies</span>}
+                        </div>
+                    )}
+                </div>
                 <div className="date-selector">
                     <label>Date:</label>
                     <input

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import CaregiverManagement from './CaregiverManagement';
 import TimeTracking from './TimeTracking';
+import Settings from './Settings';
 
 const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('caregivers');
@@ -10,7 +11,12 @@ const Dashboard: React.FC = () => {
             <header className="dashboard-header">
                 <h1>Household Payroll System</h1>
                 <div className="header-actions">
-                    <button className="btn-secondary">Settings</button>
+                    <button
+                        className="btn-secondary"
+                        onClick={() => setActiveTab('settings')}
+                    >
+                        ⚙️ Settings
+                    </button>
                 </div>
             </header>
 
@@ -59,6 +65,8 @@ const Dashboard: React.FC = () => {
                         <p>Coming soon: View YTD summaries and export data</p>
                     </div>
                 )}
+
+                {activeTab === 'settings' && <Settings />}
             </main>
         </div>
     );
