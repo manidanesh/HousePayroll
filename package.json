@@ -2,17 +2,17 @@
   "name": "household-payroll",
   "version": "1.0.0",
   "description": "A personal payroll application for household employers to manage caregiver payroll while maintaining compliance with U.S. federal and Colorado employment requirements.",
-  "main": "dist/main.js",
+  "main": "dist/main/main.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
     "build:renderer": "webpack --mode production",
-    "build:main": "tsc src/main/main.ts --outDir dist",
-    "build": "npm run build:renderer && npm run build:main",
-    "start": "webpack && electron dist/main.js",
+    "build:main": "tsc --project tsconfig.main.json",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "npm run build && electron dist/main/main.js",
     "dev:renderer": "webpack serve --mode development",
-    "dev": "NODE_ENV=development webpack && electron dist/main.js",
+    "dev": "npm run build && electron dist/main/main.js",
     "package": "electron-builder --mac",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -54,6 +54,7 @@
     "css-loader": "^7.1.2",
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
     "html-webpack-plugin": "^5.6.5",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
