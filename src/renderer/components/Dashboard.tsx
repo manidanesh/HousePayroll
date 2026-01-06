@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CaregiverManagement from './CaregiverManagement';
 
 const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('caregivers');
@@ -40,12 +41,7 @@ const Dashboard: React.FC = () => {
             </nav>
 
             <main className="dashboard-content">
-                {activeTab === 'caregivers' && (
-                    <div className="content-section">
-                        <h2>Caregiver Management</h2>
-                        <p>Coming soon: Add and manage caregiver profiles</p>
-                    </div>
-                )}
+                {activeTab === 'caregivers' && <CaregiverManagement />}
 
                 {activeTab === 'time' && (
                     <div className="content-section">

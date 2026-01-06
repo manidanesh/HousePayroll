@@ -226,3 +226,287 @@ body {
   font-size: 24px;
   font-weight: 500;
 }
+
+/* Employer Setup & Forms */
+.setup-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.setup-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  padding: 50px 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  width: 100%;
+}
+
+.setup-card h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.setup-card p {
+  color: #666;
+  margin-bottom: 30px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group small {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: #888;
+}
+
+.form-group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-group-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+}
+
+.form-group-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Caregiver Management */
+.caregivers-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.caregivers-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.caregivers-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.header-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* Table */
+.caregivers-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.caregivers-table thead {
+  background: #f8f8f8;
+}
+
+.caregivers-table th {
+  padding: 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.caregivers-table td {
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+  font-size: 15px;
+}
+
+.caregivers-table tr:last-child td {
+  border-bottom: none;
+}
+
+.caregivers-table tr.inactive {
+  opacity: 0.6;
+}
+
+.caregivers-table tr:hover {
+  background: #fafafa;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.active {
+  background: #e6f7ed;
+  color: #22863a;
+}
+
+.status-badge.inactive {
+  background: #fee;
+  color: #c33;
+}
+
+/* Buttons */
+.btn-small {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  margin-right: 8px;
+}
+
+.btn-small:last-child {
+  margin-right: 0;
+}
+
+.btn-danger {
+  background: #fee;
+  color: #c33;
+}
+
+.btn-danger:hover {
+  background: #fdd;
+}
+
+.btn-success {
+  background: #e6f7ed;
+  color: #22863a;
+}
+
+.btn-success:hover {
+  background: #d4f0df;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 24px;
+}
+
+.caregiver-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state p {
+  color: #888;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+/* Content Updates */
+.caregivers-list {
+  margin-top: 20px;
+}

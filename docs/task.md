@@ -18,16 +18,16 @@
 - [x] Push to remote repository
 
 ## Foundation Setup
-- [ ] Initialize project structure
-- [ ] Set up database with encryption for SSN data
-- [ ] Configure authentication mechanism
-- [ ] Implement core data models
-- [ ] Set up testing framework
+- [x] Initialize project structure
+- [x] Set up database with encryption for SSN data
+- [x] Configure authentication mechanism
+- [x] Implement core data models
+- [/] Set up testing framework
 
 ## Core Components - Employer & Caregiver Management
 - [ ] Implement household employer profile management
 - [ ] Build caregiver profile CRUD operations
-- [ ] Implement SSN encryption/decryption
+- [ ] Implement SSN encryption/decryption (already in db.ts)
 - [ ] Create profile validation logic
 
 ## Core Components - Time Tracking
@@ -37,18 +37,18 @@
 - [ ] Create time entry UI
 
 ## Core Components - Tax Computation
-- [ ] Implement Tax_Computer component with isolated tax rules
-- [ ] Add federal tax rates (Social Security, Medicare, FUTA)
-- [ ] Implement Colorado SUTA manual entry
+- [x] Implement Tax_Computer component with isolated tax rules
+- [x] Add federal tax rates (Social Security, Medicare, FUTA)
+- [x] Implement Colorado SUTA manual entry
 - [ ] Add tax rule versioning system
 
 ## Core Components - Payroll Calculation
-- [ ] Build Payroll_Calculator with pure functions
-- [ ] Implement gross wage calculation per caregiver
-- [ ] Add employee withholding calculations
-- [ ] Implement employer tax calculations
-- [ ] Add net pay computation
-- [ ] Create multi-caregiver batch processing
+- [x] Build Payroll_Calculator with pure functions
+- [x] Implement gross wage calculation per caregiver
+- [x] Add employee withholding calculations
+- [x] Implement employer tax calculations
+- [x] Add net pay computation
+- [x] Create multi-caregiver batch processing
 
 ## Core Components - Payment Tracking
 - [ ] Build Payment_Tracker component
