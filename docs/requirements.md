@@ -14,6 +14,67 @@ The Household Payroll System is a personal payroll application designed for a si
 - **Tax_Computer**: Component that encapsulates all tax rules and rates
 - **Paystub_Generator**: Component that renders paystubs from finalized payroll data
 - **Payment_Tracker**: Component that tracks check numbers and payment dates
+- **Pay_Rate_Multiplier**: A configurable factor applied to base hourly rate for weekend or holiday hours
+- **Holiday_Calendar**: System component that identifies U.S. federal holidays and applies appropriate pay multipliers
+
+## Requirements
+
+### Requirement 11: Holiday and Weekend Differential Pay
+
+**User Story:** As a household employer, I want to configure and automatically apply different pay rates for weekend and holiday hours, so that I can fairly compensate caregivers for working on special days without manual calculation.
+
+#### Acceptance Criteria
+
+1. THE Payroll_System SHALL allow employer to configure holiday pay multiplier (e.g., 1.5× base rate)
+2. THE Payroll_System SHALL allow employer to configure weekend pay multiplier (e.g., 1.25× base rate)  
+3. THE Payroll_System SHALL automatically identify U.S. federal holidays using a Holiday_Calendar component
+4. THE Payroll_System SHALL automatically identify weekends (Saturday and Sunday) for all time entries
+5. THE Payroll_System SHALL apply the appropriate multiplier when calculating gross wages for holiday or weekend hours
+6. THE Payroll_System SHALL display hours breakdown by type (Regular, Weekend, Holiday) on paystubs
+7. THE Payroll_System SHALL show effective pay rate and subtotal for each hour type on paystubs
+8. THE Payroll_System SHALL provide a calendar view with visual indicators for weekends (blue) and holidays (red)
+9. THE Payroll_System SHALL allow employer to override automatic classification if needed
+10. THE Payroll_System SHALL calculate gross pay as: Σ(hours × base_rate × applicable_multiplier)
+11. THE Payroll_System SHALL maintain multiplier values in employer profile for audit purposes
+12. THE Payroll_System SHALL initialize default multipliers as 1.0 (no differential) for new employer profiles
+
+#### U.S. Federal Holidays Recognized
+
+The system recognizes the following U.S. federal holidays:
+- New Year's Day (January 1)
+- Martin Luther King Jr. Day (Third Monday in January)
+- Presidents' Day (Third Monday in February)
+- Memorial Day (Last Monday in May)
+- Independence Day (July 4)
+- Labor Day (First Monday in September)
+- Columbus Day (Second Monday in October)
+- Veterans Day (November 11)
+- Thanksgiving Day (Fourth Thursday in November)
+- Christmas Day (December 25)
+
+#### Example Calculation
+
+**Scenario:**
+- Base hourly rate: $20/hr
+- Holiday multiplier: 1.5×
+- Weekend multiplier: 1.25×
+- Pay period: December 22-28, 2024
+
+**Hours:**
+- Monday-Thursday (Regular): 32 hours @ $20/hr = $640
+- Saturday (Weekend): 8 hours @ $25/hr (1.25×) = $200
+- Wednesday Dec 25 (Christmas, Holiday): 8 hours @ $30/hr (1.5×) = $240
+
+**Total Gross Pay:** $1,080
+
+**Paystub Breakdown:**
+```
+Regular Hours:    32.00 hrs @ $20.00/hr = $640.00
+Weekend Hours:     8.00 hrs @ $25.00/hr = $200.00
+Holiday Hours:     8.00 hrs @ $30.00/hr = $240.00
+                                        ─────────
+Total Gross Pay:                        $1,080.00
+```
 
 ## Requirements
 
