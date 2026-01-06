@@ -27,8 +27,9 @@ This system enables a single household employer to:
 
 ## Documentation
 
-- [Requirements Document](.kiro/specs/household-payroll-system/requirements.md) - Complete system requirements with acceptance criteria
-- Implementation Plan - (Coming soon) Technical architecture and component design
+- [Requirements Document](docs/requirements.md) - Complete system requirements with acceptance criteria
+- [Implementation Plan](docs/implementation_plan.md) - Technical architecture and component design
+- [Task Breakdown](docs/task.md) - Development checklist and progress tracking
 
 ## Project Status
 
