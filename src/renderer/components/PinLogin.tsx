@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthService } from '../../services/auth-service';
+import { ipcAPI } from '../lib/ipc';
 
 interface PinLoginProps {
     onLogin: () => void;
@@ -16,7 +16,7 @@ const PinLogin: React.FC<PinLoginProps> = ({ onLogin }) => {
         setLoading(true);
 
         try {
-            const isValid = await AuthService.verifyPin(pin);
+            const isValid = await ipcAPI.auth.verifyPin(pin);
             if (isValid) {
                 onLogin();
             } else {

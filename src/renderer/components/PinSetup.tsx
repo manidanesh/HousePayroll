@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthService } from '../../services/auth-service';
+import { ipcAPI } from '../lib/ipc';
 
 interface PinSetupProps {
     onPinSetup: () => void;
@@ -25,7 +25,7 @@ const PinSetup: React.FC<PinSetupProps> = ({ onPinSetup }) => {
         }
 
         try {
-            await AuthService.setupPin(pin);
+            await ipcAPI.auth.setPin(pin);
             onPinSetup();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to set up PIN');

@@ -5,6 +5,20 @@
 
 import { TaxComputer, TaxCalculation } from './tax-computer';
 
+export interface TaxAmounts {
+    socialSecurityEmployee: number;
+    medicareEmployee: number;
+    socialSecurityEmployer: number;
+    medicareEmployer: number;
+    futa: number;
+    coloradoSuta: number;
+    coloradoFamliEmployee: number;
+    coloradoFamliEmployer: number;
+    coloradoStateIncomeTax: number;
+    totalEmployeeWithholdings: number;
+    totalEmployerTaxes: number;
+}
+
 export interface PayrollInput {
     caregiverId: number;
     hoursWorked: number;

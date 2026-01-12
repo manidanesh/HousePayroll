@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Batch cleanup script for remaining console statements
+# This script will be used as a reference for manual cleanup
+
+echo "=== Console Statement Cleanup Summary ==="
+echo ""
+echo "Files to clean up:"
+echo "1. CaregiverManagement.tsx - 4 console.error"
+echo "2. Reports.tsx - 8 console.error"  
+echo "3. HouseholdSwitcher.tsx - 4 console.error"
+echo "4. TimeTracking.tsx - 2 console.error"
+echo "5. Settings.tsx - 2 remaining"
+echo "6. PayrollDetail.tsx - 2 console.error"
+echo "7. TaxConfigurationSettings.tsx - 2 console.error"
+echo "8. PaymentsDashboard.tsx - 1 console.error"
+echo "9. UnpaidWorkCalendar.tsx - 1 console.error"
+echo "10. CaregiverSelectionScreen.tsx - 1 console.error"
+echo "11. OnboardingWizard.tsx - 1 console.error"
+echo "12. AuditLog.tsx - 1 console.error"
+echo "13. PayrollHistory.tsx - 1 console.error"
+echo "14. ErrorBoundary.tsx - 1 console.log (development only - OK to keep)"
+echo "15. ipc-handlers.ts - 2 console.error"
+echo ""
+echo "Total: ~31 console statements remaining"
+echo ""
+echo "Strategy:"
+echo "- Replace console.error with toast.error in UI components"
+echo "- Remove debug console.log statements"
+echo "- Keep console in ErrorBoundary (development debugging)"

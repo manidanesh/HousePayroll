@@ -1,0 +1,394 @@
+/**
+ * CaregiverService - Manages caregiver profile operations
+ */
+
+import { getDatabase, encrypt, decrypt } from '../database/db';
+import { EmployerService } from './employer-service';
+hourlyRate: number;
+relationshipNote ?: string;
+isActive: boolean;
+hfwaBalance: number;
+addressLine1 ?: string;
+addressLine2 ?: string;
+city ?: string;
+state ?: string;
+zip ?: string;
+stripeCustomerId ?: string;
+stripeBankAccountId ?: string;
+payoutMethod ?: 'check' | 'electronic';
+maskedDestinationAccount ?: string;
+stripePayoutId ?: string;
+i9Completed: boolean;
+i9CompletionDate ?: string;
+i9Notes ?: string;
+createdAt: string;
+updatedAt: string;
+}
+
+export class CaregiverService {
+    /**
+     * Create caregiver profile
+     */
+    static createCaregiver(data: {
+        fullLegalName: string;
+        ssn: string;
+        hourlyRate: number;
+        relationshipNote?: string;
+        addressLine1?: string;
+        addressLine2?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        i9Completed?: boolean;
+        i9CompletionDate?: string;
+        i9Notes?: string;
+        payoutMethod?: 'check' | 'electronic';
+        maskedDestinationAccount?: string;
+        stripePayoutId?: string;
+    }): Caregiver {
+        const db = getDatabase();
+        const employer = EmployerService.getEmployer();
+        if (!employer) throw new Error('No active employer profile found');
+
+        // Encrypt SSN
+        const ssnEncrypted = encrypt(data.ssn);
+
+        const result = db.prepare(`
+            INSERT INTO caregivers (
+                full_legal_name, ssn_encrypted, hourly_rate, relationship_note,
+                address_line1, address_line2, city, state, zip, employer_id,
+                i9_completed, i9_completion_date, i9_notes,
+                payout_method, masked_destination_account, stripe_payout_id_enc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            data.fullLegalName,
+            ssnEncrypted,
+            data.hourlyRate,
+            data.relationshipNote || null,
+            data.addressLine1 || null,
+            data.addressLine2 || null,
+            data.city || null,
+            data.state || null,
+            data.zip || null,
+            employer.id,
+            data.i9Completed ? 1 : 0,
+            data.i9CompletionDate || null,
+            data.i9Notes || null,
+            data.payoutMethod || 'check',
+            data.maskedDestinationAccount || null,
+            data.stripePayoutId ? encrypt(data.stripePayoutId) : null
+        );
+
+        const caregiver = this.getCaregiverById(result.lastInsertRowid as number)!;
+
+        // Log audit
+        AuditService.log({
+            tableName: 'caregivers',
+            recordId: caregiver.id,
+            action: 'CREATE',
+            changesJson: JSON.stringify(data)
+        });
+
+        return caregiver;
+    }
+
+    /**
+     * Get all active caregivers
+     */
+    static getAllCaregivers(includeInactive = false): Caregiver[] {
+        const db = getDatabase();
+        const employer = EmployerService.getEmployer();
+        if (!employer) return [];
+
+        const query = includeInactive
+            ? 'SELECT * FROM caregivers WHERE employer_id = ? ORDER BY full_legal_name'
+            : 'SELECT * FROM caregivers WHERE employer_id = ? AND is_active = 1 ORDER BY full_legal_name';
+
+        const rows = db.prepare(query).all(employer.id) as any[];
+
+        return rows.map(row => ({
+            id: row.id,
+            fullLegalName: row.full_legal_name,
+            ssn: decrypt(row.ssn_encrypted),
+            hourlyRate: row.hourly_rate,
+            relationshipNote: row.relationship_note,
+            isActive: row.is_active === 1,
+            hfwaBalance: row.hfwa_balance || 0,
+            addressLine1: row.address_line1,
+            addressLine2: row.address_line2,
+            city: row.city,
+            state: row.state,
+            zip: row.zip,
+            stripeCustomerId: row.stripe_customer_id,
+            stripeBankAccountId: row.stripe_bank_account_id,
+            i9Completed: row.i9_completed === 1,
+            i9CompletionDate: row.i9_completion_date,
+            i9Notes: row.i9_notes,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        }));
+    }
+
+    /**
+     * Get caregiver by ID
+     */
+    static getCaregiverById(id: number): Caregiver | null {
+        const db = getDatabase();
+        const employer = EmployerService.getEmployer();
+        if (!employer) return null;
+
+        const row = db.prepare('SELECT * FROM caregivers WHERE id = ? AND employer_id = ?').get(id, employer.id) as any;
+
+        if (!row) return null;
+
+        return {
+            id: row.id,
+            fullLegalName: row.full_legal_name,
+            ssn: decrypt(row.ssn_encrypted),
+            hourlyRate: row.hourly_rate,
+            relationshipNote: row.relationship_note,
+            isActive: row.is_active === 1,
+            hfwaBalance: row.hfwa_balance || 0,
+            addressLine1: row.address_line1,
+            addressLine2: row.address_line2,
+            city: row.city,
+            state: row.state,
+            zip: row.zip,
+            stripeCustomerId: row.stripe_customer_id,
+            stripeBankAccountId: row.stripe_bank_account_id,
+            i9Completed: row.i9_completed === 1,
+            i9CompletionDate: row.i9_completion_date,
+            i9Notes: row.i9_notes,
+            payoutMethod: row.payout_method || 'check',
+            maskedDestinationAccount: row.masked_destination_account,
+            stripePayoutId: row.stripe_payout_id_enc ? decrypt(row.stripe_payout_id_enc) : undefined,
+            // W-4 Federal Withholding
+            w4FilingStatus: row.w4_filing_status || 'single',
+            w4MultipleJobs: row.w4_multiple_jobs === 1,
+            w4DependentsAmount: row.w4_dependents_amount || 0,
+            w4OtherIncome: row.w4_other_income || 0,
+            w4Deductions: row.w4_deductions || 0,
+            w4ExtraWithholding: row.w4_extra_withholding || 0,
+            w4LastUpdated: row.w4_last_updated,
+            w4EffectiveDate: row.w4_effective_date,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            employerId: row.employer_id
+        } as Caregiver;
+    }
+
+    /**
+     * Update caregiver profile
+     */
+    static updateCaregiver(id: number, data: UpdateCaregiverInput): Caregiver {
+        const db = getDatabase();
+
+        const updates: string[] = [];
+        const values: any[] = [];
+
+        if (data.fullLegalName !== undefined) {
+            updates.push('full_legal_name = ?');
+            values.push(data.fullLegalName);
+        }
+        if (data.ssn !== undefined) {
+            updates.push('ssn_encrypted = ?');
+            values.push(encrypt(data.ssn));
+        }
+        if (data.hourlyRate !== undefined) {
+            updates.push('hourly_rate = ?');
+            values.push(data.hourlyRate);
+        }
+        if (data.relationshipNote !== undefined) {
+            updates.push('relationship_note = ?');
+            values.push(data.relationshipNote || null);
+        }
+        if (data.addressLine1 !== undefined) {
+            updates.push('address_line1 = ?');
+            values.push(data.addressLine1);
+        }
+        if (data.addressLine2 !== undefined) {
+            updates.push('address_line2 = ?');
+            values.push(data.addressLine2);
+        }
+        if (data.city !== undefined) {
+            updates.push('city = ?');
+            values.push(data.city);
+        }
+        if (data.state !== undefined) {
+            updates.push('state = ?');
+            values.push(data.state);
+        }
+        if (data.zip !== undefined) {
+            updates.push('zip = ?');
+            values.push(data.zip);
+        }
+        if (data.stripeCustomerId !== undefined) {
+            updates.push('stripe_customer_id = ?');
+            values.push(data.stripeCustomerId);
+        }
+        if (data.stripeBankAccountId !== undefined) {
+            updates.push('stripe_bank_account_id = ?');
+            values.push(data.stripeBankAccountId);
+        }
+        if (data.i9Completed !== undefined) {
+            updates.push('i9_completed = ?');
+            values.push(data.i9Completed ? 1 : 0);
+        }
+        if (data.i9CompletionDate !== undefined) {
+            updates.push('i9_completion_date = ?');
+            values.push(data.i9CompletionDate);
+        }
+        if (data.i9Notes !== undefined) {
+            updates.push('i9_notes = ?');
+            values.push(data.i9Notes);
+        }
+        if (data.payoutMethod !== undefined) {
+            updates.push('payout_method = ?');
+            values.push(data.payoutMethod);
+        }
+        if (data.maskedDestinationAccount !== undefined) {
+            updates.push('masked_destination_account = ?');
+            values.push(data.maskedDestinationAccount);
+        }
+        if (data.stripePayoutId !== undefined) {
+            updates.push('stripe_payout_id_enc = ?');
+            values.push(data.stripePayoutId ? encrypt(data.stripePayoutId) : null);
+        }
+
+        if (updates.length === 0) {
+            return this.getCaregiverById(id)!;
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        // The `id` for the WHERE clause must be the last parameter.
+        // It's added to `values` after all other update values.
+        values.push(id);
+
+        db.prepare(`
+            UPDATE caregivers SET ${updates.join(', ')} WHERE id = ?
+        `).run(...values);
+
+        const caregiver = this.getCaregiverById(id)!;
+
+        // Detect W-4 changes and update tracking fields
+        const w4Changed =
+            (data.w4FilingStatus && data.w4FilingStatus !== (caregiver as any).w4FilingStatus) ||
+            (data.w4MultipleJobs !== undefined && data.w4MultipleJobs !== (caregiver as any).w4MultipleJobs) ||
+            (data.w4DependentsAmount !== undefined && data.w4DependentsAmount !== (caregiver as any).w4DependentsAmount) ||
+            (data.w4OtherIncome !== undefined && data.w4OtherIncome !== (caregiver as any).w4OtherIncome) ||
+            (data.w4Deductions !== undefined && data.w4Deductions !== (caregiver as any).w4Deductions) ||
+            (data.w4ExtraWithholding !== undefined && data.w4ExtraWithholding !== (caregiver as any).w4ExtraWithholding);
+
+        if (w4Changed) {
+            const today = new Date().toISOString().split('T')[0];
+            const effectiveDate = data.w4EffectiveDate || today;
+
+            // Update W-4 tracking fields
+            db.prepare(`
+                UPDATE caregivers
+                SET w4_last_updated = ?, w4_effective_date = ?
+                WHERE id = ?
+            `).run(today, effectiveDate, id);
+
+            // Enhanced audit logging for W-4 changes
+            AuditService.log({
+                tableName: 'caregivers',
+                recordId: id,
+                action: 'UPDATE',
+                changesJson: JSON.stringify({
+                    w4_change: {
+                        old: {
+                            filingStatus: (caregiver as any).w4FilingStatus,
+                            multipleJobs: (caregiver as any).w4MultipleJobs,
+                            dependentsAmount: (caregiver as any).w4DependentsAmount,
+                            otherIncome: (caregiver as any).w4OtherIncome,
+                            deductions: (caregiver as any).w4Deductions,
+                            extraWithholding: (caregiver as any).w4ExtraWithholding
+                        },
+                        new: {
+                            filingStatus: data.w4FilingStatus || (caregiver as any).w4FilingStatus,
+                            multipleJobs: data.w4MultipleJobs !== undefined ? data.w4MultipleJobs : (caregiver as any).w4MultipleJobs,
+                            dependentsAmount: data.w4DependentsAmount !== undefined ? data.w4DependentsAmount : (caregiver as any).w4DependentsAmount,
+                            otherIncome: data.w4OtherIncome !== undefined ? data.w4OtherIncome : (caregiver as any).w4OtherIncome,
+                            deductions: data.w4Deductions !== undefined ? data.w4Deductions : (caregiver as any).w4Deductions,
+                            extraWithholding: data.w4ExtraWithholding !== undefined ? data.w4ExtraWithholding : (caregiver as any).w4ExtraWithholding
+                        },
+                        effective_date: effectiveDate,
+                        last_updated: today
+                    }
+                })
+            });
+        } else {
+            // Regular audit log for non-W-4 changes
+            AuditService.log({
+                tableName: 'caregivers',
+                recordId: id,
+                action: 'UPDATE',
+                changesJson: JSON.stringify(data)
+            });
+        }
+
+        return caregiver;
+    }
+
+    /**
+     * Deactivate caregiver
+     */
+    static deactivateCaregiver(id: number): void {
+        const db = getDatabase();
+        db.prepare(`
+            UPDATE caregivers SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).run(id);
+
+        AuditService.log({
+            tableName: 'caregivers',
+            recordId: id,
+            action: 'UPDATE',
+            changesJson: JSON.stringify({ isActive: false })
+        });
+    }
+
+    /**
+     * Reactivate caregiver
+     */
+    static reactivateCaregiver(id: number): void {
+        const db = getDatabase();
+        db.prepare(`
+            UPDATE caregivers SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).run(id);
+
+        AuditService.log({
+            tableName: 'caregivers',
+            recordId: id,
+            action: 'UPDATE',
+            changesJson: JSON.stringify({ isActive: true })
+        });
+    }
+
+    /**
+     * Delete caregiver (only if no payroll records exist)
+     */
+    static deleteCaregiver(id: number): void {
+        const db = getDatabase();
+
+        // Check if caregiver has payroll records
+        const payrollCount = db.prepare(
+            'SELECT COUNT(*) as count FROM payroll_records WHERE caregiver_id = ?'
+        ).get(id) as { count: number };
+
+        if (payrollCount.count > 0) {
+            throw new Error('Cannot delete caregiver with existing payroll records. Deactivate instead.');
+        }
+
+        // Check if caregiver has time entries
+        const timeCount = db.prepare(
+            'SELECT COUNT(*) as count FROM time_entries WHERE caregiver_id = ?'
+        ).get(id) as { count: number };
+
+        if (timeCount.count > 0) {
+            throw new Error('Cannot delete caregiver with existing time entries. Deactivate instead.');
+        }
+
+        db.prepare('DELETE FROM caregivers WHERE id = ?').run(id);
+    }
+}

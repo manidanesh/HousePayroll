@@ -1,6 +1,8 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import { initializeDatabase } from '../database/db';
+import { registerIpcHandlers } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -11,19 +13,16 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
-            preload: path.join(__dirname, 'preload.js'),
         },
         titleBarStyle: 'hiddenInset', // macOS native look
         backgroundColor: '#1a1a1a',
     });
 
     // Load the app
-    if (process.env.NODE_ENV === 'development') {
-        mainWindow.loadURL('http://localhost:8080');
-        mainWindow.webContents.openDevTools();
-    } else {
-        mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
-    }
+    mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
+
+    // Open DevTools for debugging
+    mainWindow.webContents.openDevTools();
 
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -33,7 +32,32 @@ function createWindow() {
 app.on('ready', () => {
     // Initialize database
     initializeDatabase();
+    // Register IPC handlers
+    registerIpcHandlers();
     createWindow();
+
+    // Check for updates
+    if (app.isPackaged) {
+        autoUpdater.checkForUpdatesAndNotify();
+    }
+});
+
+// Auto-update event listeners
+autoUpdater.on('update-available', () => {
+    console.log('Update available');
+});
+
+autoUpdater.on('update-downloaded', (_info) => {
+    dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message: 'A new version of Household Payroll has been downloaded. Restart the application to apply the updates?',
+        buttons: ['Restart', 'Later']
+    }).then((result) => {
+        if (result.response === 0) {
+            autoUpdater.quitAndInstall();
+        }
+    });
 });
 
 app.on('window-all-closed', () => {

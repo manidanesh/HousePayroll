@@ -24,6 +24,7 @@
     "exclude": [
         "node_modules",
         "dist",
-        "src/renderer"
+        "src/renderer",
+        "src/utils/paystub-generator.ts"
     ]
 }

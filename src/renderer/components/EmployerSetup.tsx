@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { EmployerService } from '../../services/employer-service';
+import { ipcAPI } from '../lib/ipc';
 
 interface EmployerSetupProps {
     onComplete: () => void;
@@ -50,7 +50,7 @@ const EmployerSetup: React.FC<EmployerSetupProps> = ({ onComplete }) => {
         }
 
         try {
-            EmployerService.createEmployer({
+            await ipcAPI.employer.create({
                 displayName: formData.displayName,
                 ssnOrEin: formData.ssnOrEin,
                 payFrequency: formData.payFrequency,

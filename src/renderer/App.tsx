@@ -1,28 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { AuthService } from '../services/auth-service';
-import { EmployerService } from '../services/employer-service';
+import toast from 'react-hot-toast';
+import { ipcAPI } from './lib/ipc';
 import PinSetup from './components/PinSetup';
 import PinLogin from './components/PinLogin';
-import EmployerSetup from './components/EmployerSetup';
+import OnboardingWizard from './components/OnboardingWizard';
 import Dashboard from './components/Dashboard';
 
-const App: React.FC = () => {
+import { CaregiverProvider, useCaregiver } from './context/caregiver-context';
+import CaregiverSelectionScreen from './components/CaregiverSelectionScreen';
+
+const Main: React.FC = () => {
     const [isPinSet, setIsPinSet] = useState<boolean>(false);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [hasEmployerProfile, setHasEmployerProfile] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
+    const { selectedCaregiver, setIsSelectionRequired, isSelectionRequired } = useCaregiver();
 
     useEffect(() => {
         checkAppStatus();
     }, []);
 
-    const checkAppStatus = () => {
-        const pinSet = AuthService.isPinSet();
-        const employerExists = EmployerService.hasEmployerProfile();
+    useEffect(() => {
+        if (!isAuthenticated) return;
 
-        setIsPinSet(pinSet);
-        setHasEmployerProfile(employerExists);
-        setLoading(false);
+        let logoutTimer: any;
+        const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes
+
+        const resetTimer = () => {
+            if (logoutTimer) clearTimeout(logoutTimer);
+            logoutTimer = setTimeout(() => {
+                setIsAuthenticated(false);
+            }, INACTIVITY_LIMIT);
+        };
+
+        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+        events.forEach(event => window.addEventListener(event, resetTimer));
+
+        resetTimer();
+
+        return () => {
+            if (logoutTimer) clearTimeout(logoutTimer);
+            events.forEach(event => window.removeEventListener(event, resetTimer));
+        };
+    }, [isAuthenticated]);
+
+    const checkAppStatus = async () => {
+        try {
+            const pinSet = await ipcAPI.auth.isPinSet();
+            const employerExists = await ipcAPI.employer.has();
+
+            setIsPinSet(pinSet);
+            setHasEmployerProfile(employerExists);
+        } catch (error) {
+            toast.error('Failed to check app status');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handlePinSetup = () => {
@@ -30,16 +63,28 @@ const App: React.FC = () => {
         setIsAuthenticated(true);
     };
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
         setIsAuthenticated(true);
 
-        // Check if employer profile exists after login
-        const employerExists = EmployerService.hasEmployerProfile();
-        setHasEmployerProfile(employerExists);
+        try {
+            // Check if employer profile exists after login
+            const employerExists = await ipcAPI.employer.has();
+            setHasEmployerProfile(employerExists);
+
+            if (employerExists) {
+                const caregivers = await ipcAPI.caregiver.getAll(false);
+                if (caregivers.length > 1) {
+                    setIsSelectionRequired(true);
+                }
+            }
+        } catch (error) {
+            toast.error('Failed to check employer profile');
+        }
     };
 
     const handleEmployerSetup = () => {
         setHasEmployerProfile(true);
+        setIsSelectionRequired(false); // New setup usually only has one
     };
 
     if (loading) {
@@ -60,13 +105,26 @@ const App: React.FC = () => {
         return <PinLogin onLogin={handleLogin} />;
     }
 
-    // Step 3: Set up employer profile if not configured
+    // Step 3: Set up employer profile and first caregiver if not configured
     if (!hasEmployerProfile) {
-        return <EmployerSetup onComplete={handleEmployerSetup} />;
+        return <OnboardingWizard onComplete={handleEmployerSetup} />;
     }
 
-    // Step 4: Show main dashboard
+    // Step 4: Core selection (if multiple caregivers)
+    if (isSelectionRequired && !selectedCaregiver) {
+        return <CaregiverSelectionScreen onSelect={() => setIsSelectionRequired(false)} />;
+    }
+
+    // Step 5: Show main dashboard
     return <Dashboard />;
+};
+
+const App: React.FC = () => {
+    return (
+        <CaregiverProvider>
+            <Main />
+        </CaregiverProvider>
+    );
 };
 
 export default App;

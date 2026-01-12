@@ -6,8 +6,7 @@ yarn-error.log*
 
 # Build outputs
 dist/
-build/
-*.log
+release/
 
 # Environment variables
 .env
@@ -46,3 +45,8 @@ temp/
 
 # Electron
 release/
+
+# Compiled JavaScript (TypeScript output)
+src/**/*.js
+src/**/*.js.map
+!src/**/*.config.js
