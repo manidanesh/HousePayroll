@@ -26,8 +26,9 @@ import { StripeService } from '../services/stripe-service';
 import { PaymentService } from '../services/payment-service';
 import { DatabaseCleanup } from '../services/database-cleanup';
 import { YTDService } from '../services/ytd-service';
-import { FederalWithholdingCalculator, W4Information } from '../core/federal-withholding-calculator';
+import { FederalWithholdingCalculator, W4Information, PayFrequency } from '../core/federal-withholding-calculator';
 import { CreateEmployerInput, UpdateEmployerInput, CreateCaregiverInput, UpdateCaregiverInput, CreateTimeEntryInput, PayrollCalculationInput, PayrollCalculationResult, CreatePaymentInput } from '../types';
+import { logger } from '../utils/logger';
 
 export function registerIpcHandlers() {
     // Auth handlers
@@ -74,19 +75,25 @@ export function registerIpcHandlers() {
 
     // Caregiver handlers
     ipcMain.handle('caregiver:create', (_event, data: CreateCaregiverInput) => {
-        return CaregiverService.createCaregiver(data);
+        const caregiver = CaregiverService.createCaregiver(data);
+        // Strip SSN before sending to renderer
+        const { ssn, ...safeCaregiver } = caregiver;
+        return safeCaregiver;
     });
 
     ipcMain.handle('caregiver:getAll', (_event, includeInactive?: boolean) => {
-        return CaregiverService.getAllCaregivers(includeInactive);
+        return CaregiverService.getAllCaregiversForRenderer(includeInactive);
     });
 
     ipcMain.handle('caregiver:getById', (_event, id: number) => {
-        return CaregiverService.getCaregiverById(id);
+        return CaregiverService.getCaregiverByIdForRenderer(id);
     });
 
     ipcMain.handle('caregiver:update', (_event, id: number, data: UpdateCaregiverInput) => {
-        return CaregiverService.updateCaregiver(id, data);
+        const caregiver = CaregiverService.updateCaregiver(id, data);
+        // Strip SSN before sending to renderer
+        const { ssn, ...safeCaregiver } = caregiver;
+        return safeCaregiver;
     });
 
     ipcMain.handle('caregiver:deactivate', (_event, id: number) => {
@@ -142,9 +149,9 @@ export function registerIpcHandlers() {
     ipcMain.handle('payroll:getById', (_event, id: number) => {
         return PayrollService.getPayrollRecordById(id);
     });
-
-    ipcMain.handle('payroll:getYTDWages', (_event, caregiverId: number, year: number) => {
-        return PayrollService.getYTDGrossWages(caregiverId, year);
+    // YTD handlers
+    ipcMain.handle('ytd:getGrossWages', (_event, caregiverId: number, year: number) => {
+        return YTDService.getYTDGrossWages(caregiverId, year);
     });
 
     ipcMain.handle('payroll:finalize', (_event, id: number, checkNumber: string, paymentDate: string, pdfData?: Uint8Array, isLatePayment?: boolean, paymentMethod?: string, checkBankName?: string, checkAccountOwner?: string) => {
@@ -166,8 +173,13 @@ export function registerIpcHandlers() {
         return PayrollService.getPaystubContext(recordId);
     });
 
+    ipcMain.handle('ytd:getContext', (_event, caregiverId: number, year: number) => {
+        return YTDService.getYTDContext(caregiverId, year);
+    });
+
+    // Legacy handler for backward compatibility
     ipcMain.handle('payroll:getYTDContext', (_event, caregiverId: number, year: number) => {
-        return PayrollService.getYTDContext(caregiverId, year);
+        return YTDService.getYTDContext(caregiverId, year);
     });
 
     ipcMain.handle('payroll:getHistory', () => {
@@ -277,10 +289,19 @@ export function registerIpcHandlers() {
             // Get YTD wages
             const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, new Date().getFullYear());
 
+            // Map employer pay frequency to calculator format
+            const payFrequency = (employer?.payFrequency === 'bi-weekly'
+                ? 'biweekly'
+                : employer?.payFrequency === 'weekly'
+                    ? 'weekly'
+                    : employer?.payFrequency === 'monthly'
+                        ? 'monthly'
+                        : 'biweekly') as PayFrequency; // default fallback
+
             // Calculate federal withholding
             const federalResult = FederalWithholdingCalculator.calculateWithholding(
                 prelimResult.grossWages,
-                'biweekly',
+                payFrequency as PayFrequency,
                 w4Info,
                 ytdGrossWages
             );
@@ -345,10 +366,19 @@ export function registerIpcHandlers() {
             // Get YTD wages
             const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, new Date().getFullYear());
 
+            // Map employer pay frequency to calculator format
+            const payFrequency = (employer?.payFrequency === 'bi-weekly'
+                ? 'biweekly'
+                : employer?.payFrequency === 'weekly'
+                    ? 'weekly'
+                    : employer?.payFrequency === 'monthly'
+                        ? 'monthly'
+                        : 'biweekly') as PayFrequency; // default fallback
+
             // Calculate federal withholding
             const federalResult = FederalWithholdingCalculator.calculateWithholding(
                 prelimResult.grossWages,
-                'biweekly',
+                payFrequency as PayFrequency,
                 w4Info,
                 ytdGrossWages
             );
@@ -521,10 +551,10 @@ export function registerIpcHandlers() {
         const fs = require('fs');
         try {
             fs.writeFileSync(filePath, Buffer.from(data));
-            return { success: true, path: filePath };
+            return { success: true, filePath: filePath };
         } catch (err: any) {
-            console.error('Failed to save file:', err);
-            return { success: false };
+            logger.error('Failed to save file', { error: err });
+            return { success: false, error: (err as Error).message };
         }
     });
 
@@ -590,5 +620,5 @@ export function registerIpcHandlers() {
         return DatabaseCleanup.getDatabaseStats();
     });
 
-    console.log('IPC handlers registered');
+    logger.info('IPC handlers registered');
 }

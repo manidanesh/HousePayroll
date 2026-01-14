@@ -3,7 +3,7 @@
  */
 
 import { getDatabase, encrypt, decrypt } from '../database/db';
-import { Caregiver, CreateCaregiverInput, UpdateCaregiverInput } from '../types';
+import { Caregiver, CreateCaregiverInput, UpdateCaregiverInput, RendererSafeCaregiver } from '../types';
 import { AuditService } from './audit-service';
 import { EmployerService } from './employer-service';
 
@@ -18,6 +18,17 @@ export class CaregiverService {
         relationshipNote?: string;
     }): Caregiver {
         const db = getDatabase();
+
+        // Validate required fields
+        if (!data.fullLegalName || data.fullLegalName.trim().length === 0) {
+            throw new Error('Full legal name is required and cannot be empty');
+        }
+        if (!data.ssn || data.ssn.trim().length === 0) {
+            throw new Error('SSN is required and cannot be empty');
+        }
+        if (data.hourlyRate === undefined || data.hourlyRate === null || data.hourlyRate <= 0) {
+            throw new Error('Hourly rate is required and must be greater than 0');
+        }
 
         // Encrypt SSN
         const ssnEncrypted = encrypt(data.ssn);
@@ -47,39 +58,57 @@ export class CaregiverService {
 
         const rows = db.prepare(query).all() as any[];
 
-        return rows.map((row: any) => ({
-            id: row.id,
-            fullLegalName: row.full_legal_name,
-            ssn: decrypt(row.ssn_encrypted),
-            hourlyRate: row.hourly_rate,
-            relationshipNote: row.relationship_note,
-            addressLine1: row.address_line1,
-            addressLine2: row.address_line2,
-            city: row.city,
-            state: row.state,
-            zip: row.zip,
-            employerId: row.employer_id,
-            isActive: row.is_active === 1,
-            hfwaBalance: row.hfwa_balance || 0,
-            stripeCustomerId: row.stripe_customer_id,
-            stripeBankAccountId: row.stripe_bank_account_id,
-            payoutMethod: row.payout_method || 'check',
-            maskedDestinationAccount: row.masked_destination_account,
-            stripePayoutId: row.stripe_payout_id_enc ? decrypt(row.stripe_payout_id_enc) : undefined,
-            i9Completed: row.i9_completed === 1,
-            i9CompletionDate: row.i9_completion_date,
-            i9Notes: row.i9_notes,
-            w4FilingStatus: row.w4_filing_status || 'single',
-            w4MultipleJobs: row.w4_multiple_jobs === 1,
-            w4DependentsAmount: row.w4_dependents_amount || 0,
-            w4OtherIncome: row.w4_other_income || 0,
-            w4Deductions: row.w4_deductions || 0,
-            w4ExtraWithholding: row.w4_extra_withholding || 0,
-            w4LastUpdated: row.w4_last_updated,
-            w4EffectiveDate: row.w4_effective_date,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at
-        })) as Caregiver[];
+        return rows.map((row: any) => {
+            const fullSsn = decrypt(row.ssn_encrypted);
+            const maskedSsn = fullSsn.includes('-')
+                ? `XXX-XX-${fullSsn.split('-')[2]}`
+                : `XXX-XX-${fullSsn.slice(-4)}`;
+
+            return {
+                id: row.id,
+                fullLegalName: row.full_legal_name,
+                ssn: fullSsn,
+                maskedSsn,
+                hourlyRate: row.hourly_rate,
+                relationshipNote: row.relationship_note,
+                addressLine1: row.address_line1,
+                addressLine2: row.address_line2,
+                city: row.city,
+                state: row.state,
+                zip: row.zip,
+                employerId: row.employer_id,
+                isActive: row.is_active === 1,
+                hfwaBalance: row.hfwa_balance || 0,
+                stripeCustomerId: row.stripe_customer_id,
+                stripeBankAccountId: row.stripe_bank_account_id,
+                payoutMethod: row.payout_method || 'check',
+                maskedDestinationAccount: row.masked_destination_account,
+                stripePayoutId: row.stripe_payout_id_enc ? decrypt(row.stripe_payout_id_enc) : undefined,
+                i9Completed: row.i9_completed === 1,
+                i9CompletionDate: row.i9_completion_date,
+                i9Notes: row.i9_notes,
+                w4FilingStatus: row.w4_filing_status || 'single',
+                w4MultipleJobs: row.w4_multiple_jobs === 1,
+                w4DependentsAmount: row.w4_dependents_amount || 0,
+                w4OtherIncome: row.w4_other_income || 0,
+                w4Deductions: row.w4_deductions || 0,
+                w4ExtraWithholding: row.w4_extra_withholding || 0,
+                w4LastUpdated: row.w4_last_updated,
+                w4EffectiveDate: row.w4_effective_date,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at
+            };
+        }) as Caregiver[];
+    }
+
+    /**
+     * Get all active caregivers (renderer-safe, excludes SSN)
+     * Use this method when sending data to the renderer process
+     */
+    static getAllCaregiversForRenderer(includeInactive = false): RendererSafeCaregiver[] {
+        const caregivers = this.getAllCaregivers(includeInactive);
+        // Strip SSN field from each caregiver
+        return caregivers.map(({ ssn, ...safeCaregiver }) => safeCaregiver);
     }
 
     /**
@@ -91,10 +120,16 @@ export class CaregiverService {
 
         if (!row) return null;
 
-        return {
+        const fullSsn = decrypt(row.ssn_encrypted);
+        const maskedSsn = fullSsn.includes('-')
+            ? `XXX-XX-${fullSsn.split('-')[2]}`
+            : `XXX-XX-${fullSsn.slice(-4)}`;
+
+        const result = {
             id: row.id,
             fullLegalName: row.full_legal_name,
-            ssn: decrypt(row.ssn_encrypted),
+            ssn: fullSsn,
+            maskedSsn,
             hourlyRate: row.hourly_rate,
             relationshipNote: row.relationship_note,
             addressLine1: row.address_line1,
@@ -125,6 +160,21 @@ export class CaregiverService {
             createdAt: row.created_at,
             updatedAt: row.updated_at
         } as Caregiver;
+
+        return result;
+    }
+
+    /**
+     * Get caregiver by ID (renderer-safe, excludes SSN)
+     * Use this method when sending data to the renderer process
+     */
+    static getCaregiverByIdForRenderer(id: number): RendererSafeCaregiver | null {
+        const caregiver = this.getCaregiverById(id);
+        if (!caregiver) return null;
+
+        // Strip SSN field
+        const { ssn, ...safeCaregiver } = caregiver;
+        return safeCaregiver;
     }
 
     /**
@@ -216,11 +266,13 @@ export class CaregiverService {
             });
         } else {
             // Regular audit log for non-W-4 changes
+            // Sanitize SSN from audit log
+            const { ssn, ...sanitizedData } = data;
             AuditService.log({
                 tableName: 'caregivers',
                 recordId: id,
                 action: 'UPDATE',
-                changesJson: JSON.stringify(data)
+                changesJson: JSON.stringify(sanitizedData)
             });
         }
 

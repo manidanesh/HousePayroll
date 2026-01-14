@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { ipcAPI } from '../lib/ipc';
 import { useCaregiver } from '../context/caregiver-context';
-import { Caregiver } from '../../types';
+import { RendererSafeCaregiver } from '../../types';
 
 const CaregiverManagement: React.FC = () => {
     const { selectedCaregiver, selectCaregiver } = useCaregiver();
-    const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+    const [caregivers, setCaregivers] = useState<RendererSafeCaregiver[]>([]);
     const [showForm, setShowForm] = useState(false);
-    const [editingCaregiver, setEditingCaregiver] = useState<Caregiver | null>(null);
-    const [onboardingCaregiver, setOnboardingCaregiver] = useState<Caregiver | null>(null);
+    const [editingCaregiver, setEditingCaregiver] = useState<RendererSafeCaregiver | null>(null);
+    const [onboardingCaregiver, setOnboardingCaregiver] = useState<RendererSafeCaregiver | null>(null);
     const [viewingHistoryId, setViewingHistoryId] = useState<number | null>(null);
     const [showInactive, setShowInactive] = useState(false);
 
@@ -31,7 +31,7 @@ const CaregiverManagement: React.FC = () => {
         setShowForm(true);
     };
 
-    const handleEdit = (caregiver: Caregiver) => {
+    const handleEdit = (caregiver: RendererSafeCaregiver) => {
         setEditingCaregiver(caregiver);
         setShowForm(true);
     };
@@ -194,14 +194,14 @@ const CaregiverManagement: React.FC = () => {
 };
 
 interface CaregiverFormProps {
-    caregiver: Caregiver | null;
+    caregiver: RendererSafeCaregiver | null;
     onClose: () => void;
 }
 
 const CaregiverForm: React.FC<CaregiverFormProps> = ({ caregiver, onClose }) => {
     const [formData, setFormData] = useState({
         fullLegalName: caregiver?.fullLegalName || '',
-        ssn: caregiver?.ssn || '',
+        ssn: '', // Always empty - never populate from caregiver object (security)
         hourlyRate: caregiver?.hourlyRate.toString() || '',
         relationshipNote: caregiver?.relationshipNote || '',
         addressLine1: caregiver?.addressLine1 || '',
@@ -264,10 +264,10 @@ const CaregiverForm: React.FC<CaregiverFormProps> = ({ caregiver, onClose }) => 
 
         try {
             if (caregiver) {
-                // Update existing caregiver
+                // Update existing caregiver - DO NOT send SSN (already in database)
                 await ipcAPI.caregiver.update(caregiver.id, {
                     fullLegalName: formData.fullLegalName,
-                    ssn: formData.ssn,
+                    // ssn: formData.ssn, // ❌ REMOVED - SSN cannot be changed after creation
                     hourlyRate,
                     relationshipNote: formData.relationshipNote,
                     addressLine1: formData.addressLine1,
@@ -343,18 +343,37 @@ const CaregiverForm: React.FC<CaregiverFormProps> = ({ caregiver, onClose }) => 
 
                     <div className="form-group">
                         <label>Social Security Number *</label>
-                        <input
-                            type="text"
-                            value={formData.ssn}
-                            onChange={(e) => setFormData({ ...formData, ssn: formatSSN(e.target.value) })}
-                            placeholder="000-00-0000"
-                            className="form-input"
-                            maxLength={11}
-                        />
-                        {formData.ssn && formData.ssn.length < 11 && <small style={{ color: '#e74c3c' }}>SSN must be 9 digits (000-00-0000)</small>}
-                        <div style={{ marginTop: '4px' }}>
-                            <small>Encrypted and stored securely</small>
-                        </div>
+                        {caregiver ? (
+                            // Edit mode - show masked SSN (read-only)
+                            <>
+                                <input
+                                    type="text"
+                                    value={caregiver.maskedSsn}
+                                    className="form-input"
+                                    disabled
+                                    style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+                                />
+                                <small style={{ color: '#666', display: 'block', marginTop: '4px' }}>
+                                    SSN cannot be changed after creation. Contact support if correction needed.
+                                </small>
+                            </>
+                        ) : (
+                            // Create mode - allow SSN entry
+                            <>
+                                <input
+                                    type="text"
+                                    value={formData.ssn}
+                                    onChange={(e) => setFormData({ ...formData, ssn: formatSSN(e.target.value) })}
+                                    placeholder="000-00-0000"
+                                    className="form-input"
+                                    maxLength={11}
+                                />
+                                {formData.ssn && formData.ssn.length < 11 && <small style={{ color: '#e74c3c' }}>SSN must be 9 digits (000-00-0000)</small>}
+                                <div style={{ marginTop: '4px' }}>
+                                    <small>Encrypted and stored securely</small>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     <div className="form-group">
@@ -611,7 +630,7 @@ const CaregiverForm: React.FC<CaregiverFormProps> = ({ caregiver, onClose }) => 
 };
 
 interface StripeBankFormProps {
-    caregiver: Caregiver;
+    caregiver: RendererSafeCaregiver;
     onClose: () => void;
 }
 

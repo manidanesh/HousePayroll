@@ -8,6 +8,8 @@
  * - Common shared types
  */
 
+import { DayType } from '../utils/holiday-calendar';
+
 // ============================================================================
 // EMPLOYER TYPES
 // ============================================================================
@@ -129,7 +131,8 @@ export interface UpdateCaregiverInput extends Partial<CreateCaregiverInput> {
 export interface Caregiver {
     id: number;
     fullLegalName: string;
-    ssn: string;
+    ssn: string; // ⚠️ SENSITIVE: Only use when absolutely necessary (tax forms, etc.)
+    maskedSsn: string; // Safe for display: XXX-XX-1234
     hourlyRate: number;
     relationshipNote: string | null;
     addressLine1?: string;
@@ -161,6 +164,12 @@ export interface Caregiver {
     createdAt: string;
     updatedAt: string;
 }
+
+/**
+ * Renderer-safe version of Caregiver that excludes the SSN field.
+ * Use this type when sending caregiver data to the renderer process.
+ */
+export type RendererSafeCaregiver = Omit<Caregiver, 'ssn'>;
 
 // ============================================================================
 // TIME ENTRY TYPES
@@ -194,6 +203,7 @@ export interface TimeEntryWithCaregiver extends TimeEntry {
 export interface TimeEntryForPayroll {
     date: string;
     hours: number;
+    dayType?: DayType;
 }
 
 export interface PayrollCalculationInput {
@@ -282,6 +292,7 @@ export interface PayrollRecord {
     coloradoSuta?: number;
     coloradoFamliEmployee?: number;
     coloradoFamliEmployer?: number;
+    coloradoStateIncomeTax?: number;
     employerSuiRate?: number;
     employerSuiPaid?: number;
     calculationVersion: string;
@@ -289,6 +300,8 @@ export interface PayrollRecord {
     isFinalized: boolean;
     isMinimumWageCompliant?: boolean;
     checkNumber?: string;
+    checkBankName?: string;
+    checkAccountOwner?: string;
     paymentDate?: string;
     isVoided?: boolean;
     voidReason?: string;
@@ -297,6 +310,7 @@ export interface PayrollRecord {
     i9Snapshot?: boolean;
     createdAt: string;
 }
+
 
 // ============================================================================
 // PAYMENT TYPES
@@ -398,6 +412,12 @@ export interface QuarterlyTaxSummary {
 // DATABASE ROW TYPES
 // ============================================================================
 
+/**
+ * Database row types use snake_case to match actual database column names.
+ * These are used when querying the database directly.
+ * Service layer methods should map these to camelCase domain types.
+ */
+
 export interface EmployerRow {
     id: number;
     display_name: string;
@@ -424,10 +444,16 @@ export interface EmployerRow {
     weekend_pay_multiplier: number;
     colorado_sui_account_number: string | null;
     colorado_sui_rate: number | null;
+    colorado_sui_wage_base: number | null;
+    colorado_sui_effective_date: string | null;
+    workers_comp_acknowledged: number;
     workers_comp_policy_number: string | null;
     workers_comp_carrier: string | null;
+    workers_comp_acknowledgment_date: string | null;
     colorado_famli_employee_rate: number;
     colorado_famli_employer_rate: number;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface CaregiverRow {
@@ -452,6 +478,15 @@ export interface CaregiverRow {
     payout_method: string;
     masked_destination_account: string | null;
     stripe_payout_id_enc: string | null;
+    // W-4 Federal Withholding Information
+    w4_filing_status: string | null;
+    w4_multiple_jobs: number | null;
+    w4_dependents_amount: number | null;
+    w4_other_income: number | null;
+    w4_deductions: number | null;
+    w4_extra_withholding: number | null;
+    w4_last_updated: string | null;
+    w4_effective_date: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -493,6 +528,7 @@ export interface PayrollRecordRow {
     colorado_suta: number | null;
     colorado_famli_employee: number | null;
     colorado_famli_employer: number | null;
+    colorado_state_income_tax: number | null;
     employer_sui_rate: number | null;
     employer_sui_paid: number | null;
     calculation_version: string;
@@ -500,6 +536,8 @@ export interface PayrollRecordRow {
     is_finalized: number;
     is_minimum_wage_compliant: number | null;
     check_number: string | null;
+    check_bank_name: string | null;
+    check_account_owner: string | null;
     payment_date: string | null;
     is_voided: number | null;
     void_reason: string | null;
@@ -508,4 +546,42 @@ export interface PayrollRecordRow {
     i9_snapshot: number | null;
     paystub_pdf: Buffer | null;
     created_at: string;
+}
+
+export interface PaymentRow {
+    id: number;
+    employer_id: number;
+    caregiver_id: number;
+    payroll_record_id: number | null;
+    amount: number;
+    currency: string;
+    stripe_id: string | null;
+    status: string;
+    error_message: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface TaxConfigurationRow {
+    id: number;
+    year: number;
+    social_security_rate: number;
+    medicare_rate: number;
+    futa_rate: number;
+    ss_wage_base: number;
+    futa_wage_base: number;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface AuditLogRow {
+    id: number;
+    employer_id: number;
+    table_name: string;
+    record_id: number | null;
+    action: string;
+    changes_json: string | null;
+    calculation_version: string | null;
+    timestamp: string;
 }
