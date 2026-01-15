@@ -29,6 +29,7 @@ import { YTDService } from '../services/ytd-service';
 import { FederalWithholdingCalculator, W4Information, PayFrequency } from '../core/federal-withholding-calculator';
 import { CreateEmployerInput, UpdateEmployerInput, CreateCaregiverInput, UpdateCaregiverInput, CreateTimeEntryInput, PayrollCalculationInput, PayrollCalculationResult, CreatePaymentInput } from '../types';
 import { logger } from '../utils/logger';
+import { sanitizeData } from '../utils/sanitizer';
 
 export function registerIpcHandlers() {
     // Auth handlers
@@ -50,7 +51,12 @@ export function registerIpcHandlers() {
     });
 
     ipcMain.handle('employer:create', (_event, data: CreateEmployerInput) => {
-        return EmployerService.createEmployer(data);
+        try {
+            return EmployerService.createEmployer(data);
+        } catch (err: any) {
+            logger.error('Failed to create employer', err, { data: sanitizeData(data) });
+            throw err;
+        }
     });
 
     ipcMain.handle('employer:get', () => {
@@ -58,7 +64,12 @@ export function registerIpcHandlers() {
     });
 
     ipcMain.handle('employer:update', (_event, data: UpdateEmployerInput) => {
-        return EmployerService.updateEmployer(data);
+        try {
+            return EmployerService.updateEmployer(data);
+        } catch (err: any) {
+            logger.error('Failed to update employer', err, { data: sanitizeData(data) });
+            throw err;
+        }
     });
 
     ipcMain.handle('employer:getAll', () => {
@@ -75,10 +86,15 @@ export function registerIpcHandlers() {
 
     // Caregiver handlers
     ipcMain.handle('caregiver:create', (_event, data: CreateCaregiverInput) => {
-        const caregiver = CaregiverService.createCaregiver(data);
-        // Strip SSN before sending to renderer
-        const { ssn, ...safeCaregiver } = caregiver;
-        return safeCaregiver;
+        try {
+            const caregiver = CaregiverService.createCaregiver(data);
+            // Strip SSN before sending to renderer
+            const { ssn, ...safeCaregiver } = caregiver;
+            return safeCaregiver;
+        } catch (err: any) {
+            logger.error('Failed to create caregiver', err, { data: sanitizeData(data) });
+            throw err;
+        }
     });
 
     ipcMain.handle('caregiver:getAll', (_event, includeInactive?: boolean) => {
@@ -90,10 +106,15 @@ export function registerIpcHandlers() {
     });
 
     ipcMain.handle('caregiver:update', (_event, id: number, data: UpdateCaregiverInput) => {
-        const caregiver = CaregiverService.updateCaregiver(id, data);
-        // Strip SSN before sending to renderer
-        const { ssn, ...safeCaregiver } = caregiver;
-        return safeCaregiver;
+        try {
+            const caregiver = CaregiverService.updateCaregiver(id, data);
+            // Strip SSN before sending to renderer
+            const { ssn, ...safeCaregiver } = caregiver;
+            return safeCaregiver;
+        } catch (err: any) {
+            logger.error('Failed to update caregiver', err, { id, data: sanitizeData(data) });
+            throw err;
+        }
     });
 
     ipcMain.handle('caregiver:deactivate', (_event, id: number) => {

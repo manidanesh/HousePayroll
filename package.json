@@ -13,7 +13,8 @@
     "package": "electron-builder --mac",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "payroll",
@@ -43,7 +44,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": "Apple Development: mani.danesh@outlook.com (U265LLJBJD)"
     },
     "dmg": {
       "contents": [
@@ -86,7 +88,6 @@
     "css-loader": "^7.1.2",
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
-    "electron-rebuild": "^3.2.9",
     "html-webpack-plugin": "^5.6.5",
     "jest": "^30.2.0",
     "style-loader": "^4.0.0",

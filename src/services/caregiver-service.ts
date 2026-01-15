@@ -6,17 +6,13 @@ import { getDatabase, encrypt, decrypt } from '../database/db';
 import { Caregiver, CreateCaregiverInput, UpdateCaregiverInput, RendererSafeCaregiver } from '../types';
 import { AuditService } from './audit-service';
 import { EmployerService } from './employer-service';
+import { sanitizeData } from '../utils/sanitizer';
 
 export class CaregiverService {
     /**
      * Create caregiver profile
      */
-    static createCaregiver(data: {
-        fullLegalName: string;
-        ssn: string;
-        hourlyRate: number;
-        relationshipNote?: string;
-    }): Caregiver {
+    static createCaregiver(data: CreateCaregiverInput): Caregiver {
         const db = getDatabase();
 
         // Validate required fields
@@ -33,18 +29,59 @@ export class CaregiverService {
         // Encrypt SSN
         const ssnEncrypted = encrypt(data.ssn);
 
+        // Prepare W-4/I-9 values
+        const i9Completed = data.i9Completed ? 1 : 0;
+        const w4MultipleJobs = data.w4MultipleJobs ? 1 : 0;
+        const today = new Date().toISOString().split('T')[0];
+        const w4EffectiveDate = data.w4EffectiveDate || today;
+
         const result = db.prepare(`
       INSERT INTO caregivers (
-        full_legal_name, ssn_encrypted, hourly_rate, relationship_note
-      ) VALUES (?, ?, ?, ?)
+        full_legal_name, ssn_encrypted, hourly_rate, relationship_note,
+        address_line1, address_line2, city, state, zip,
+        i9_completed, i9_completion_date, i9_notes,
+        payout_method, masked_destination_account, stripe_payout_id_enc,
+        w4_filing_status, w4_multiple_jobs, w4_dependents_amount,
+        w4_other_income, w4_deductions, w4_extra_withholding,
+        w4_last_updated, w4_effective_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
             data.fullLegalName,
             ssnEncrypted,
             data.hourlyRate,
-            data.relationshipNote || null
+            data.relationshipNote || null,
+            data.addressLine1 || null,
+            data.addressLine2 || null,
+            data.city || null,
+            data.state || null,
+            data.zip || null,
+            i9Completed,
+            data.i9CompletionDate || null,
+            data.i9Notes || null,
+            data.payoutMethod || 'check',
+            data.maskedDestinationAccount || null,
+            data.stripePayoutId ? encrypt(data.stripePayoutId) : null,
+            data.w4FilingStatus || 'single',
+            w4MultipleJobs,
+            data.w4DependentsAmount || 0,
+            data.w4OtherIncome || 0,
+            data.w4Deductions || 0,
+            data.w4ExtraWithholding || 0,
+            today,
+            w4EffectiveDate
         );
 
-        return this.getCaregiverById(result.lastInsertRowid as number)!;
+        const newId = result.lastInsertRowid as number;
+
+        // Log audit event
+        AuditService.log({
+            tableName: 'caregivers',
+            recordId: newId,
+            action: 'CREATE',
+            changesJson: JSON.stringify(sanitizeData(data))
+        });
+
+        return this.getCaregiverById(newId)!;
     }
 
     /**
@@ -266,13 +303,13 @@ export class CaregiverService {
             });
         } else {
             // Regular audit log for non-W-4 changes
-            // Sanitize SSN from audit log
-            const { ssn, ...sanitizedData } = data;
+            // Regular audit log for non-W-4 changes
+            // Sanitize SSN from audit log using centralized sanitizer
             AuditService.log({
                 tableName: 'caregivers',
                 recordId: id,
                 action: 'UPDATE',
-                changesJson: JSON.stringify(sanitizedData)
+                changesJson: JSON.stringify(sanitizeData(data))
             });
         }
 
