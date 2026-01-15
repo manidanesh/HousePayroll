@@ -1,11 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { app } from 'electron';
 import { getDatabase, closeDatabase } from '../database/db';
 
-const DATA_DIR = path.join(os.homedir(), '.household-payroll');
+// Use Electron's userData directory (platform-independent)
+const DATA_DIR = app.getPath('userData');
 const DB_PATH = path.join(DATA_DIR, 'payroll.db');
-const KEY_PATH = path.join(DATA_DIR, '.key');
+const KEY_PATH_ENC = path.join(DATA_DIR, '.key.enc');
 
 export class BackupService {
     /**
@@ -24,8 +25,8 @@ export class BackupService {
         const keyDest = dbDest + '.key';
 
         fs.copyFileSync(DB_PATH, dbDest);
-        if (fs.existsSync(KEY_PATH)) {
-            fs.copyFileSync(KEY_PATH, keyDest);
+        if (fs.existsSync(KEY_PATH_ENC)) {
+            fs.copyFileSync(KEY_PATH_ENC, keyDest);
         }
     }
 
@@ -48,14 +49,14 @@ export class BackupService {
             if (fs.existsSync(DB_PATH)) {
                 fs.renameSync(DB_PATH, `${DB_PATH}.${timestamp}.bak`);
             }
-            if (fs.existsSync(KEY_PATH)) {
-                fs.renameSync(KEY_PATH, `${KEY_PATH}.${timestamp}.bak`);
+            if (fs.existsSync(KEY_PATH_ENC)) {
+                fs.renameSync(KEY_PATH_ENC, `${KEY_PATH_ENC}.${timestamp}.bak`);
             }
 
             // Copy new files
             fs.copyFileSync(dbSrc, DB_PATH);
             if (fs.existsSync(keySrc)) {
-                fs.copyFileSync(keySrc, KEY_PATH);
+                fs.copyFileSync(keySrc, KEY_PATH_ENC);
             }
         } catch (err) {
             console.error('Failed to import backup:', err);

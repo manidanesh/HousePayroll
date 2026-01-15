@@ -7,7 +7,11 @@ import { logger } from '../utils/logger';
 
 let db: Database.Database | null = null;
 
-const DATA_DIR = path.join(app.getPath('userData'), '..', '..', 'Mobile Documents', 'com~apple~CloudDocs', 'Applications', 'HousePayroll', 'DB');
+// Use Electron's userData directory (platform-independent)
+// macOS: ~/Library/Application Support/Household Payroll/
+// Windows: %APPDATA%/Household Payroll/
+// Linux: ~/.config/Household Payroll/
+const DATA_DIR = app.getPath('userData');
 const keyPath = path.join(DATA_DIR, '.key');
 const keyPathEnc = path.join(DATA_DIR, '.key.enc');
 let ENCRYPTION_KEY: string | null = null;
