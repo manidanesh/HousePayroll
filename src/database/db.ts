@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import * as path from 'path';
 import { app, safeStorage } from 'electron';
 import * as crypto from 'crypto';
-import * as os from 'os';
 import * as fs from 'fs';
 import { logger } from '../utils/logger';
 
