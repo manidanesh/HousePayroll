@@ -8,7 +8,7 @@ import { logger } from '../utils/logger';
 
 let db: Database.Database | null = null;
 
-const DATA_DIR = path.join(os.homedir(), '.household-payroll');
+const DATA_DIR = path.join(app.getPath('userData'), '..', '..', 'Mobile Documents', 'com~apple~CloudDocs', 'Applications', 'HousePayroll', 'DB');
 const keyPath = path.join(DATA_DIR, '.key');
 const keyPathEnc = path.join(DATA_DIR, '.key.enc');
 let ENCRYPTION_KEY: string | null = null;

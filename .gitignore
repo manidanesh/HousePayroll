@@ -50,3 +50,4 @@ release/
 src/**/*.js
 src/**/*.js.map
 !src/**/*.config.js
+DB/
