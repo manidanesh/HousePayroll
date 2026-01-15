@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { app } from 'electron';
 
 export enum LogLevel {
     DEBUG = 0,
@@ -33,7 +33,11 @@ class Logger {
     private logDir: string;
 
     private constructor() {
-        this.logDir = path.join(os.homedir(), '.household-payroll', 'logs');
+        // Use Electron's standard logs directory (platform-independent)
+        // macOS: ~/Library/Logs/Household Payroll/
+        // Windows: %USERPROFILE%\AppData\Roaming\Household Payroll\logs\
+        // Linux: ~/.config/Household Payroll/logs/
+        this.logDir = app.getPath('logs');
         this.ensureLogDirectory();
         this.logFile = path.join(
             this.logDir,

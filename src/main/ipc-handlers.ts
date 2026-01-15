@@ -47,6 +47,7 @@ export function registerIpcHandlers() {
 
     // Employer handlers
     ipcMain.handle('employer:has', () => {
+        logger.info('Checking employer profile existence');
         return EmployerService.hasEmployerProfile();
     });
 
@@ -60,6 +61,7 @@ export function registerIpcHandlers() {
     });
 
     ipcMain.handle('employer:get', () => {
+        logger.info('Fetching employer profile');
         return EmployerService.getEmployer();
     });
 
