@@ -191,6 +191,22 @@ const PayrollDetail: React.FC<PayrollDetailProps> = ({ recordId, onBack }) => {
                             </tr>
                         )}
 
+                        <tr className="total-row" style={{ borderTop: '2px solid #ddd', fontWeight: 'bold' }}>
+                            <td colSpan={3}>Total Employee Deductions</td>
+                            <td>-{f(
+                                (record.ssEmployee || 0) +
+                                (record.medicareEmployee || 0) +
+                                (record.colorado_famli_employee || 0) +
+                                (record.federalWithholding || 0)
+                            )}</td>
+                            <td>-{f(
+                                (ytd.ssEmployee || 0) +
+                                (ytd.medicareEmployee || 0) +
+                                (ytd.coloradoFamliEmployee || 0) +
+                                (ytd.federalWithholding || 0)
+                            )}</td>
+                        </tr>
+
                         <tr className="row-net">
                             <td colSpan={3}>Net Pay</td>
                             <td>{f(record.netPay)}</td>
@@ -225,6 +241,24 @@ const PayrollDetail: React.FC<PayrollDetailProps> = ({ recordId, onBack }) => {
                             <td>-</td>
                             <td>{f(record.colorado_suta || 0)}</td>
                             <td>{f(ytd.coloradoSuta)}</td>
+                        </tr>
+
+                        <tr className="total-row" style={{ borderTop: '2px solid #ddd', fontWeight: 'bold' }}>
+                            <td colSpan={3}>Total Employer Taxes</td>
+                            <td>{f(
+                                (record.ssEmployer || 0) +
+                                (record.medicareEmployer || 0) +
+                                (record.futa || 0) +
+                                (record.colorado_suta || 0) +
+                                (record.colorado_famli_employer || 0)
+                            )}</td>
+                            <td>{f(
+                                (ytd.ssEmployer || 0) +
+                                (ytd.medicareEmployer || 0) +
+                                (ytd.futa || 0) +
+                                (ytd.coloradoSuta || 0) +
+                                (ytd.coloradoFamliEmployer || 0)
+                            )}</td>
                         </tr>
                     </tbody>
                 </table>
