@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import './styles.css';
+import './styles/modern-tabs.css';
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element not found');

@@ -108,6 +108,10 @@ export const ipcAPI = {
             ipcRenderer.invoke('payroll:getPaystubContext', recordId),
         getYTDContext: (caregiverId: number, year: number): Promise<any> =>
             ipcRenderer.invoke('payroll:getYTDContext', caregiverId, year),
+        calculateManualTaxes: (params: { caregiverId: number; employerId: number; grossAmount: number; payPeriodStart: string }): Promise<any> =>
+            ipcRenderer.invoke('payroll:calculateManualTaxes', params),
+        createManual: (params: { caregiverId: number; employerId: number; payPeriodStart: string; payPeriodEnd: string; description: string; grossAmount: number; paymentDate?: string; checkNumber?: string }): Promise<PayrollRecord> =>
+            ipcRenderer.invoke('payroll:createManual', params),
         getHistory: (): Promise<any[]> =>
             ipcRenderer.invoke('payroll:getHistory'),
     },

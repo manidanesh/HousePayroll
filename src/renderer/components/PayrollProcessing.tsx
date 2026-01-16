@@ -5,8 +5,10 @@ import { isPaymentLate } from '../../utils/pay-timing-validator';
 import SuccessModal from './SuccessModal';
 import { useCaregiver } from '../context/caregiver-context';
 import PayrollPreviewDetails from './PayrollPreviewDetails';
+import ManualPayrollEntry from './ManualPayrollEntry';
 
 const PayrollProcessing: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<'time-based' | 'manual'>('time-based');
     const { selectedCaregiver } = useCaregiver();
     const [caregivers, setCaregivers] = useState<any[]>([]);
     const [selectedCaregiverId, setSelectedCaregiverId] = useState<number | null>(selectedCaregiver?.id || null);
@@ -425,371 +427,398 @@ const PayrollProcessing: React.FC = () => {
     const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
 
     return (
-        <div className="payroll-processing">
+        <div className="payroll-container">
             <h2>Run Payroll</h2>
 
-            {/* Resume Pending Payroll section removed - workflow simplified to go directly from Calculate to Finalize */}
-
-            <div className="payroll-controls">
-                {!selectedCaregiver ? (
-                    <div className="form-group">
-                        <label>Select Caregiver</label>
-                        <select
-                            value={selectedCaregiverId || ''}
-                            onChange={(e) => {
-                                setSelectedCaregiverId(Number(e.target.value) || null);
-                                setCalculation(null);
-                                setStartDate('');
-                                setEndDate('');
-                            }}
-                            className="form-select"
-                        >
-                            <option value="">-- Select Caregiver --</option>
-                            {caregivers.map(c => (
-                                <option key={c.id} value={c.id}>{c.fullLegalName}</option>
-                            ))}
-                        </select>
-                    </div>
-                ) : (
-                    <div className="form-group">
-                        <label>Active Caregiver</label>
-                        <div className="caregiver-badge-locked" style={{
-                            padding: '10px 15px',
-                            background: '#e0f2fe',
-                            color: '#0369a1',
-                            borderRadius: '6px',
-                            fontWeight: 600,
-                            border: '1px solid #bae6fd',
-                            display: 'inline-block'
-                        }}>
-                            👤 {selectedCaregiver.fullLegalName}
-                        </div>
-                    </div>
-                )}
+            {/* Tab Navigation */}
+            <div className="payroll-tabs">
+                <button
+                    className={`tab-button ${activeTab === 'time-based' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('time-based')}
+                >
+                    ⏱️ Time-Based Payroll
+                </button>
+                <button
+                    className={`tab-button ${activeTab === 'manual' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('manual')}
+                >
+                    ✍️ Manual Entry
+                </button>
             </div>
 
-            {selectedCaregiverId && unpaidSummary && (
-                <div className="unpaid-summary-box" style={{
-                    background: '#fef3c7',
-                    padding: '16px',
-                    borderRadius: '8px',
-                    marginBottom: '24px',
-                    border: '1px solid #f59e0b'
-                }}>
-                    <strong style={{ color: '#92400e' }}>Unpaid Hours Detected:</strong>
-                    <div style={{ marginTop: '4px', fontSize: '14px' }}>
-                        You have <strong>{unpaidSummary.totalHours.toFixed(1)} hours</strong> unpaid
-                        between <strong>{unpaidSummary.earliestDate}</strong> and <strong>{unpaidSummary.latestDate}</strong>.
-                    </div>
-                </div>
+            {/* Manual Entry Tab */}
+            {activeTab === 'manual' && (
+                <ManualPayrollEntry onComplete={() => setActiveTab('time-based')} />
             )}
 
-            {selectedCaregiverId && (
-                <div className="date-selection-section">
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label>Start Date</label>
-                            <input
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                className="form-input"
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>End Date</label>
-                            <input
-                                type="date"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                className="form-input"
-                            />
-                        </div>
+            {/* Time-Based Payroll Tab */}
+            {activeTab === 'time-based' && (
+                <div className="payroll-processing">
+
+                    {/* Resume Pending Payroll section removed - workflow simplified to go directly from Calculate to Finalize */}
+
+                    <div className="payroll-controls">
+                        {!selectedCaregiver ? (
+                            <div className="form-group">
+                                <label>Select Caregiver</label>
+                                <select
+                                    value={selectedCaregiverId || ''}
+                                    onChange={(e) => {
+                                        setSelectedCaregiverId(Number(e.target.value) || null);
+                                        setCalculation(null);
+                                        setStartDate('');
+                                        setEndDate('');
+                                    }}
+                                    className="form-select"
+                                >
+                                    <option value="">-- Select Caregiver --</option>
+                                    {caregivers.map(c => (
+                                        <option key={c.id} value={c.id}>{c.fullLegalName}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : (
+                            <div className="form-group">
+                                <label>Active Caregiver</label>
+                                <div className="caregiver-badge-locked" style={{
+                                    padding: '10px 15px',
+                                    background: '#e0f2fe',
+                                    color: '#0369a1',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                    border: '1px solid #bae6fd',
+                                    display: 'inline-block'
+                                }}>
+                                    👤 {selectedCaregiver.fullLegalName}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {!calculation && (
-                        <div className="action-section" style={{ marginTop: '24px' }}>
-                            <button
-                                className="btn-primary"
-                                onClick={handleCalculate}
-                                disabled={loading || !startDate || !endDate}
-                            >
-                                {loading ? 'Calculating...' : 'Calculate Payroll'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Preview Mode - Show preview before calculation */}
-            {isPreviewMode && previewData && (
-                <PayrollPreviewDetails
-                    data={previewData}
-                    onApprove={handleApprovePayroll}
-                    onCancel={handleCancelPreview}
-                    isApproving={isApproving}
-                />
-            )}
-
-            {calculation && (
-                <div className="calculation-results">
-                    <h3>Payroll Summary</h3>
-                    <div className="summary-grid">
-                        <div className="summary-item">
-                            <span>Gross Pay:</span>
-                            <strong>{formatCurrency(calculation.grossWages)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>Federal Tax:</span>
-                            <strong>{formatCurrency(calculation.federalWithholding)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>Social Security:</span>
-                            <strong>{formatCurrency(calculation.ssEmployee)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>Medicare:</span>
-                            <strong>{formatCurrency(calculation.medicareEmployee)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>CO FAMLI:</span>
-                            <strong>{formatCurrency(calculation.taxes.coloradoFamliEmployee)}</strong>
-                        </div>
-                        <div className="summary-item highlight">
-                            <span>Net Pay:</span>
-                            <strong>{formatCurrency(calculation.netPay)}</strong>
-                        </div>
-                    </div>
-
-                    <h4 style={{ marginTop: '20px', marginBottom: '10px', color: '#666' }}>Employer-Paid Taxes (Info Only)</h4>
-                    <div className="summary-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', background: '#fcfcfc', border: '1px dashed #ddd' }}>
-                        <div className="summary-item">
-                            <span>Employer SS:</span>
-                            <strong>{formatCurrency(calculation.taxes.socialSecurityEmployer)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>Employer Med:</span>
-                            <strong>{formatCurrency(calculation.taxes.medicareEmployer)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>FUTA (Fed):</span>
-                            <strong>{formatCurrency(calculation.taxes.futa)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>CO SUI (Employer):</span>
-                            <strong>{formatCurrency(calculation.taxes.coloradoSuta)}</strong>
-                        </div>
-                        <div className="summary-item">
-                            <span>CO FAMLI (Employer):</span>
-                            <strong>{formatCurrency(calculation.taxes.coloradoFamliEmployer)}</strong>
-                        </div>
-                        <div className="summary-item highlight" style={{ color: 'var(--text-main)', borderLeft: '1px solid #ddd' }}>
-                            <span>Total Emp Taxes:</span>
-                            <strong>{formatCurrency(calculation.taxes.totalEmployerTaxes)}</strong>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {calculation && !processing && (
-                <div className="finalize-section card" style={{ marginTop: '24px' }}>
-                    <h3 style={{ marginBottom: '20px' }}>Finalize Payment</h3>
-
-                    {isLate && (
-                        <div className="wc-warning" style={{
-                            background: '#fee2e2',
-                            color: '#991b1b',
+                    {selectedCaregiverId && unpaidSummary && (
+                        <div className="unpaid-summary-box" style={{
+                            background: '#fef3c7',
                             padding: '16px',
                             borderRadius: '8px',
                             marginBottom: '24px',
-                            border: '1px solid #ef4444'
+                            border: '1px solid #f59e0b'
                         }}>
-                            <strong>⚠️ Compliance Advisory: Late Payment Detected</strong>
-                            <p style={{ marginTop: '8px', fontSize: '14px' }}>
-                                Colorado law requires employees to be paid within 10 days of the end of the pay period.
-                                The selected pay date of <strong>{paymentDate}</strong> is more than 10 days after the period end (<strong>{calculation.payPeriodEnd}</strong>).
-                            </p>
-                        </div>
-                    )}
-
-                    {!caregivers.find(c => c.id === selectedCaregiverId)?.i9Completed && (
-                        <div className="wc-warning" style={{
-                            background: '#fee2e2',
-                            color: '#991b1b',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            marginBottom: '24px',
-                            border: '1px solid #ef4444'
-                        }}>
-                            <strong>⚠️ Compliance Flag: Missing Federal Form I-9</strong>
-                            <p style={{ marginTop: '8px', fontSize: '14px' }}>
-                                Federal law requires employers to verify identity and employment eligibility using Form I-9.
-                                No completion record was found for this caregiver.
-                            </p>
-                            <button
-                                className="btn-small btn-secondary"
-                                style={{ marginTop: '12px' }}
-                                onClick={() => window.location.hash = '#/caregivers'}
-                            >
-                                👤 Go to Caregivers
-                            </button>
-                        </div>
-                    )}
-
-                    {!employer?.wcAcknowledged && (
-                        <div className="wc-warning" style={{
-                            background: '#fee2e2',
-                            color: '#991b1b',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            marginBottom: '24px',
-                            border: '1px solid #ef4444'
-                        }}>
-                            <strong>⚠️ Workers' Compensation Acknowledgment Required</strong>
-                            <p style={{ marginTop: '8px', fontSize: '14px' }}>
-                                Colorado law requires household employers to acknowledge their Workers' Compensation status.
-                                You must confirm this in <strong>Settings</strong> before you can finalize payroll.
-                            </p>
-                            <button
-                                className="btn-small btn-secondary"
-                                style={{ marginTop: '12px' }}
-                                onClick={() => window.location.hash = '#/settings'}
-                            >
-                                ⚙️ Go to Settings
-                            </button>
+                            <strong style={{ color: '#92400e' }}>Unpaid Hours Detected:</strong>
+                            <div style={{ marginTop: '4px', fontSize: '14px' }}>
+                                You have <strong>{unpaidSummary.totalHours.toFixed(1)} hours</strong> unpaid
+                                between <strong>{unpaidSummary.earliestDate}</strong> and <strong>{unpaidSummary.latestDate}</strong>.
+                            </div>
                         </div>
                     )}
 
                     {selectedCaregiverId && (
-                        <div className="payment-method-selector" style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #eee' }}>
-                            <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>Choose Payment Method *</label>
-                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                <button
-                                    type="button"
-                                    className={`btn-small ${paymentMethod === 'check' ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => {
-                                        setPaymentMethod('check');
-                                    }}
-                                    disabled={!employer?.wcAcknowledged}
-                                >
-                                    📄 Paper Check / Cash
-                                </button>
-
-                                {(() => {
-                                    const caregiver = caregivers.find(c => c.id === selectedCaregiverId);
-                                    const employerVerified = employer?.paymentVerificationStatus === 'verified';
-                                    const caregiverLinked = caregiver?.payoutMethod === 'electronic' && caregiver?.stripePayoutId;
-                                    const canStripe = employerVerified && caregiverLinked;
-
-                                    return (
-                                        <button
-                                            type="button"
-                                            className={`btn-small ${paymentMethod === 'stripe' ? 'btn-primary' : 'btn-secondary'}`}
-                                            onClick={() => setPaymentMethod('stripe')}
-                                            disabled={!canStripe || !employer?.wcAcknowledged}
-                                            title={!employerVerified ? "Employer funding source not verified in Settings" :
-                                                !caregiverLinked ? "Caregiver not configured for electronic payouts" :
-                                                    "Pay via Stripe ACH"}
-                                            style={!canStripe ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                                        >
-                                            💳 Electronic (Stripe)
-                                        </button>
-                                    );
-                                })()}
+                        <div className="date-selection-section">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="form-input"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>End Date</label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="form-input"
+                                    />
+                                </div>
                             </div>
-                            {!stripeAvailable && paymentMethod === 'check' && (
-                                <small style={{ color: '#666', marginTop: '8px', display: 'block' }}>
-                                    Electronic payouts are disabled until Employer & Caregiver accounts are verified.
-                                </small>
+
+                            {!calculation && (
+                                <div className="action-section" style={{ marginTop: '24px' }}>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={handleCalculate}
+                                        disabled={loading || !startDate || !endDate}
+                                    >
+                                        {loading ? 'Calculating...' : 'Calculate Payroll'}
+                                    </button>
+                                </div>
                             )}
                         </div>
                     )}
 
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label>Check/Payment Number *</label>
-                            <input
-                                type="text"
-                                value={checkNumber}
-                                onChange={(e) => setCheckNumber(e.target.value)}
-                                className="form-input"
-                                placeholder="e.g. 1001"
-                                disabled={!employer?.wcAcknowledged}
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label>Payment Date</label>
-                            <input
-                                type="date"
-                                value={paymentDate}
-                                onChange={(e) => setPaymentDate(e.target.value)}
-                                className="form-input"
-                                disabled={!employer?.wcAcknowledged}
-                            />
-                        </div>
-                    </div>
+                    {/* Preview Mode - Show preview before calculation */}
+                    {isPreviewMode && previewData && (
+                        <PayrollPreviewDetails
+                            data={previewData}
+                            onApprove={handleApprovePayroll}
+                            onCancel={handleCancelPreview}
+                            isApproving={isApproving}
+                        />
+                    )}
 
-                    {/* Bank Information (only for check payments) */}
-                    {paymentMethod === 'check' && (
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Bank Name</label>
-                                <input
-                                    type="text"
-                                    value={checkBankName}
-                                    onChange={(e) => setCheckBankName(e.target.value)}
-                                    className="form-input"
-                                    placeholder="e.g. Chase Bank"
-                                    disabled={!employer?.wcAcknowledged}
-                                />
-                                <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                                    Optional: Name of bank check is drawn from
-                                </small>
+                    {calculation && (
+                        <div className="calculation-results">
+                            <h3>Payroll Summary</h3>
+                            <div className="summary-grid">
+                                <div className="summary-item">
+                                    <span>Gross Pay:</span>
+                                    <strong>{formatCurrency(calculation.grossWages)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>Federal Tax:</span>
+                                    <strong>{formatCurrency(calculation.federalWithholding)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>Social Security:</span>
+                                    <strong>{formatCurrency(calculation.ssEmployee)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>Medicare:</span>
+                                    <strong>{formatCurrency(calculation.medicareEmployee)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>CO FAMLI:</span>
+                                    <strong>{formatCurrency(calculation.taxes.coloradoFamliEmployee)}</strong>
+                                </div>
+                                <div className="summary-item highlight">
+                                    <span>Net Pay:</span>
+                                    <strong>{formatCurrency(calculation.netPay)}</strong>
+                                </div>
                             </div>
-                            <div className="form-group">
-                                <label>Account Owner</label>
-                                <input
-                                    type="text"
-                                    value={checkAccountOwner}
-                                    onChange={(e) => setCheckAccountOwner(e.target.value)}
-                                    className="form-input"
-                                    placeholder="e.g. John Smith"
-                                    disabled={!employer?.wcAcknowledged}
-                                />
-                                <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                                    Optional: Name on checking account
-                                </small>
+
+                            <h4 style={{ marginTop: '20px', marginBottom: '10px', color: '#666' }}>Employer-Paid Taxes (Info Only)</h4>
+                            <div className="summary-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', background: '#fcfcfc', border: '1px dashed #ddd' }}>
+                                <div className="summary-item">
+                                    <span>Employer SS:</span>
+                                    <strong>{formatCurrency(calculation.taxes.socialSecurityEmployer)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>Employer Med:</span>
+                                    <strong>{formatCurrency(calculation.taxes.medicareEmployer)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>FUTA (Fed):</span>
+                                    <strong>{formatCurrency(calculation.taxes.futa)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>CO SUI (Employer):</span>
+                                    <strong>{formatCurrency(calculation.taxes.coloradoSuta)}</strong>
+                                </div>
+                                <div className="summary-item">
+                                    <span>CO FAMLI (Employer):</span>
+                                    <strong>{formatCurrency(calculation.taxes.coloradoFamliEmployer)}</strong>
+                                </div>
+                                <div className="summary-item highlight" style={{ color: 'var(--text-main)', borderLeft: '1px solid #ddd' }}>
+                                    <span>Total Emp Taxes:</span>
+                                    <strong>{formatCurrency(calculation.taxes.totalEmployerTaxes)}</strong>
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    <div className="header-actions" style={{ marginTop: '24px', justifyContent: 'flex-start' }}>
-                        {paymentMethod === 'check' ? (
-                            <button
-                                className="btn-success"
-                                onClick={handleFinalize}
-                                disabled={!checkNumber || !paymentDate || !employer?.wcAcknowledged}
-                            >
-                                Finalize & Generate PDF
-                            </button>
-                        ) : (
-                            <button
-                                className="btn-primary"
-                                disabled={true}
-                                title="Stripe Payouts: Future Release. (Employer Funding Source Required)"
-                                style={{ opacity: 0.5, cursor: 'not-allowed' }}
-                            >
-                                🔒 Finalize & Pay via Stripe (Future Release)
-                            </button>
-                        )}
-                        <button
-                            className="btn-secondary"
-                            onClick={() => setCalculation(null)}
-                            style={{ marginLeft: '12px' }}
-                        >
-                            Cancel
-                        </button>
-                    </div>
+                    {calculation && !processing && (
+                        <div className="finalize-section card" style={{ marginTop: '24px' }}>
+                            <h3 style={{ marginBottom: '20px' }}>Finalize Payment</h3>
+
+                            {isLate && (
+                                <div className="wc-warning" style={{
+                                    background: '#fee2e2',
+                                    color: '#991b1b',
+                                    padding: '16px',
+                                    borderRadius: '8px',
+                                    marginBottom: '24px',
+                                    border: '1px solid #ef4444'
+                                }}>
+                                    <strong>⚠️ Compliance Advisory: Late Payment Detected</strong>
+                                    <p style={{ marginTop: '8px', fontSize: '14px' }}>
+                                        Colorado law requires employees to be paid within 10 days of the end of the pay period.
+                                        The selected pay date of <strong>{paymentDate}</strong> is more than 10 days after the period end (<strong>{calculation.payPeriodEnd}</strong>).
+                                    </p>
+                                </div>
+                            )}
+
+                            {!caregivers.find(c => c.id === selectedCaregiverId)?.i9Completed && (
+                                <div className="wc-warning" style={{
+                                    background: '#fee2e2',
+                                    color: '#991b1b',
+                                    padding: '16px',
+                                    borderRadius: '8px',
+                                    marginBottom: '24px',
+                                    border: '1px solid #ef4444'
+                                }}>
+                                    <strong>⚠️ Compliance Flag: Missing Federal Form I-9</strong>
+                                    <p style={{ marginTop: '8px', fontSize: '14px' }}>
+                                        Federal law requires employers to verify identity and employment eligibility using Form I-9.
+                                        No completion record was found for this caregiver.
+                                    </p>
+                                    <button
+                                        className="btn-small btn-secondary"
+                                        style={{ marginTop: '12px' }}
+                                        onClick={() => window.location.hash = '#/caregivers'}
+                                    >
+                                        👤 Go to Caregivers
+                                    </button>
+                                </div>
+                            )}
+
+                            {!employer?.wcAcknowledged && (
+                                <div className="wc-warning" style={{
+                                    background: '#fee2e2',
+                                    color: '#991b1b',
+                                    padding: '16px',
+                                    borderRadius: '8px',
+                                    marginBottom: '24px',
+                                    border: '1px solid #ef4444'
+                                }}>
+                                    <strong>⚠️ Workers' Compensation Acknowledgment Required</strong>
+                                    <p style={{ marginTop: '8px', fontSize: '14px' }}>
+                                        Colorado law requires household employers to acknowledge their Workers' Compensation status.
+                                        You must confirm this in <strong>Settings</strong> before you can finalize payroll.
+                                    </p>
+                                    <button
+                                        className="btn-small btn-secondary"
+                                        style={{ marginTop: '12px' }}
+                                        onClick={() => window.location.hash = '#/settings'}
+                                    >
+                                        ⚙️ Go to Settings
+                                    </button>
+                                </div>
+                            )}
+
+                            {selectedCaregiverId && (
+                                <div className="payment-method-selector" style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #eee' }}>
+                                    <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>Choose Payment Method *</label>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                        <button
+                                            type="button"
+                                            className={`btn-small ${paymentMethod === 'check' ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => {
+                                                setPaymentMethod('check');
+                                            }}
+                                            disabled={!employer?.wcAcknowledged}
+                                        >
+                                            📄 Paper Check / Cash
+                                        </button>
+
+                                        {(() => {
+                                            const caregiver = caregivers.find(c => c.id === selectedCaregiverId);
+                                            const employerVerified = employer?.paymentVerificationStatus === 'verified';
+                                            const caregiverLinked = caregiver?.payoutMethod === 'electronic' && caregiver?.stripePayoutId;
+                                            const canStripe = employerVerified && caregiverLinked;
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    className={`btn-small ${paymentMethod === 'stripe' ? 'btn-primary' : 'btn-secondary'}`}
+                                                    onClick={() => setPaymentMethod('stripe')}
+                                                    disabled={!canStripe || !employer?.wcAcknowledged}
+                                                    title={!employerVerified ? "Employer funding source not verified in Settings" :
+                                                        !caregiverLinked ? "Caregiver not configured for electronic payouts" :
+                                                            "Pay via Stripe ACH"}
+                                                    style={!canStripe ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                                                >
+                                                    💳 Electronic (Stripe)
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
+                                    {!stripeAvailable && paymentMethod === 'check' && (
+                                        <small style={{ color: '#666', marginTop: '8px', display: 'block' }}>
+                                            Electronic payouts are disabled until Employer & Caregiver accounts are verified.
+                                        </small>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Check/Payment Number *</label>
+                                    <input
+                                        type="text"
+                                        value={checkNumber}
+                                        onChange={(e) => setCheckNumber(e.target.value)}
+                                        className="form-input"
+                                        placeholder="e.g. 1001"
+                                        disabled={!employer?.wcAcknowledged}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Payment Date</label>
+                                    <input
+                                        type="date"
+                                        value={paymentDate}
+                                        onChange={(e) => setPaymentDate(e.target.value)}
+                                        className="form-input"
+                                        disabled={!employer?.wcAcknowledged}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Bank Information (only for check payments) */}
+                            {paymentMethod === 'check' && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label>Bank Name</label>
+                                        <input
+                                            type="text"
+                                            value={checkBankName}
+                                            onChange={(e) => setCheckBankName(e.target.value)}
+                                            className="form-input"
+                                            placeholder="e.g. Chase Bank"
+                                            disabled={!employer?.wcAcknowledged}
+                                        />
+                                        <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                                            Optional: Name of bank check is drawn from
+                                        </small>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Account Owner</label>
+                                        <input
+                                            type="text"
+                                            value={checkAccountOwner}
+                                            onChange={(e) => setCheckAccountOwner(e.target.value)}
+                                            className="form-input"
+                                            placeholder="e.g. John Smith"
+                                            disabled={!employer?.wcAcknowledged}
+                                        />
+                                        <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                                            Optional: Name on checking account
+                                        </small>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="header-actions" style={{ marginTop: '24px', justifyContent: 'flex-start' }}>
+                                {paymentMethod === 'check' ? (
+                                    <button
+                                        className="btn-success"
+                                        onClick={handleFinalize}
+                                        disabled={!checkNumber || !paymentDate || !employer?.wcAcknowledged}
+                                    >
+                                        Finalize & Generate PDF
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="btn-primary"
+                                        disabled={true}
+                                        title="Stripe Payouts: Future Release. (Employer Funding Source Required)"
+                                        style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                                    >
+                                        🔒 Finalize & Pay via Stripe (Future Release)
+                                    </button>
+                                )}
+                                <button
+                                    className="btn-secondary"
+                                    onClick={() => setCalculation(null)}
+                                    style={{ marginLeft: '12px' }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -804,3 +833,5 @@ const PayrollProcessing: React.FC = () => {
 };
 
 export default PayrollProcessing;
+
+const styles = {};

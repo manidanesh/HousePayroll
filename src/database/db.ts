@@ -811,6 +811,29 @@ export function initializeDatabase() {
     `);
   } catch (err) { }
 
+  // ============================================================================
+  // MIGRATION 13: Manual Payroll Entry Support
+  // ============================================================================
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN entry_type TEXT DEFAULT 'time-based'`);
+    logger.info('Added entry_type column to payroll_records');
+  } catch (err) { }
+
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_description TEXT`);
+    logger.info('Added manual_description column to payroll_records');
+  } catch (err) { }
+
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_gross_amount REAL`);
+    logger.info('Added manual_gross_amount column to payroll_records');
+  } catch (err) { }
+
+  try {
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_entry_type ON payroll_records(entry_type)`);
+    logger.info('Created index on entry_type');
+  } catch (err) { }
+
   // Perform Health Checks
   try {
     const health = database.pragma('integrity_check');

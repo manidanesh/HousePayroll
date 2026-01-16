@@ -1,0 +1,76 @@
+/* Modern Tab Design */
+.payroll-container {
+  max-width: 1400px;
+  margin: 0;
+  padding: 0;
+}
+
+.payroll-container > h2 {
+  margin: 0 0 24px 0;
+  padding: 0 32px;
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+/* Modern Tab Navigation */
+.payroll-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 32px 32px 32px;
+  padding: 4px;
+  background: #f5f7fa;
+  border-radius: 12px;
+  width: fit-content;
+}
+
+.tab-button {
+  padding: 12px 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  color: #6b7280;
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  white-space: nowrap;
+}
+
+.tab-button:hover:not(.active) {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+.tab-button.active {
+  color: #1f2937;
+  background: white;
+  box-shadow: 
+    0 1px 3px 0 rgba(0, 0, 0, 0.1),
+    0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.tab-button:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: #3b82f6;
+  ring-offset: 2px;
+}
+
+/* Animation for tab switching */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.payroll-processing,
+.manual-entry-container {
+  animation: fadeIn 0.3s ease-out;
+}

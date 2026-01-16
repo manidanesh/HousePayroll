@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             'payroll:getRecordsForCaregiver', 'payroll:updateStatus', 'payroll:delete',
             'payroll:getHistory', 'payroll:getPaystubContext', 'payroll:checkOverlap',
             'payroll:getYTDContext', 'payroll:preview', 'payroll:saveDraft', 'payroll:approve', 'payroll:getDrafts',
-            'payroll:checkDuplicateCheckNumber',
+            'payroll:checkDuplicateCheckNumber', 'payroll:calculateManualTaxes', 'payroll:createManual',
             // Payment
             'payment:create', 'payment:getAll', 'payment:getForPayroll',
             'payment:getHistory', 'payment:getTransactionHistory', 'payment:processStripe',

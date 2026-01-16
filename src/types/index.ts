@@ -299,17 +299,22 @@ export interface PayrollRecord {
     taxVersion: string;
     isFinalized: boolean;
     isMinimumWageCompliant?: boolean;
-    status?: 'draft' | 'approved';
-    checkNumber?: string;
-    checkBankName?: string;
-    checkAccountOwner?: string;
+    status: 'pending' | 'processing' | 'approved' | 'paid' | 'failed';
+    paymentMethod?: 'check' | 'ach' | 'other';
     paymentDate?: string;
+    checkNumber?: string;
+    checkDate?: string;
+    checkAccountOwner?: string;
+    checkBankName?: string;
+    entry_type?: 'time-based' | 'manual';
+    manual_description?: string;
+    manual_gross_amount?: number;
     isVoided?: boolean;
     voidReason?: string;
-    paymentMethod?: string;
     isLatePayment?: boolean;
     i9Snapshot?: boolean;
     createdAt: string;
+    updatedAt: string;
 }
 
 
@@ -585,4 +590,18 @@ export interface AuditLogRow {
     changes_json: string | null;
     calculation_version: string | null;
     timestamp: string;
+}
+
+// ============================================================================
+// MANUAL PAYROLL ENTRY TYPES
+// ============================================================================
+
+export interface ManualPayrollInput {
+  caregiverId: number;
+  employerId: number;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  description: string;
+  grossAmount: number;
+  paymentDate?: string;
 }

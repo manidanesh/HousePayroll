@@ -434,6 +434,34 @@ export function registerIpcHandlers() {
         return PayrollService.getDrafts();
     });
 
+    // Manual Payroll Entry Handlers
+    ipcMain.handle('payroll:calculateManualTaxes', async (_event, params: {
+        caregiverId: number;
+        employerId: number;
+        grossAmount: number;
+        payPeriodStart: string;
+    }) => {
+        logger.info('Calculating taxes for manual entry', { grossAmount: params.grossAmount });
+        return await PayrollService.calculateManualTaxes(params);
+    });
+
+    ipcMain.handle('payroll:createManual', async (_event, params: {
+        caregiverId: number;
+        employerId: number;
+        payPeriodStart: string;
+        payPeriodEnd: string;
+        description: string;
+        grossAmount: number;
+        paymentDate?: string;
+    }) => {
+        logger.info('Creating manual payroll entry', {
+            caregiverId: params.caregiverId,
+            grossAmount: params.grossAmount,
+            description: params.description
+        });
+        return await PayrollService.createManualPayroll(params);
+    });
+
     ipcMain.handle('audit:getAll', async () => {
         return AuditService.getAllLogs();
     });

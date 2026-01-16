@@ -635,4 +635,146 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
 
         return deduplicated;
     }
+
+    /**
+     * Calculate taxes for manual payroll entry
+     */
+    static async calculateManualTaxes(params: {
+        caregiverId: number;
+        employerId: number;
+        grossAmount: number;
+        payPeriodStart: string;
+    }): Promise<any> {
+        // Get tax year
+        const year = new Date(params.payPeriodStart).getFullYear();
+
+        // Get YTD context (same as regular payroll)
+        const ytd = YTDService.getYTDContext(params.caregiverId, year);
+
+        // Calculate taxes - simplified calculation
+        const ssRate = 0.062;
+        const medicareRate = 0.0145;
+        const futaRate = 0.006;
+
+        const ssEmployee = params.grossAmount * ssRate;
+        const medicareEmployee = params.grossAmount * medicareRate;
+        const ssEmployer = params.grossAmount * ssRate;
+        const medicareEmployer = params.grossAmount * medicareRate;
+        const futa = params.grossAmount * futaRate;
+
+        // Simplified - no federal withholding or CO taxes for now
+        const netPay = params.grossAmount - ssEmployee - medicareEmployee;
+
+        return {
+            grossWages: params.grossAmount,
+            ssEmployee,
+            medicareEmployee,
+            federalWithholding: 0,
+            coloradoFamliEmployee: 0,
+            netPay,
+            ssEmployer,
+            medicareEmployer,
+            futa,
+            coloradoSuta: 0,
+            coloradoFamliEmployer: 0,
+        };
+    }
+
+    /**
+     * Create manual payroll entry
+     */
+    static async createManualPayroll(params: {
+        caregiverId: number;
+        employerId: number;
+        payPeriodStart: string;
+        payPeriodEnd: string;
+        description: string;
+        grossAmount: number;
+        paymentDate?: string;
+        checkNumber?: string;
+    }): Promise<PayrollRecord> {
+        const db = getDatabase();
+
+        // Calculate taxes
+        const taxes = await PayrollService.calculateManualTaxes({
+            caregiverId: params.caregiverId,
+            employerId: params.employerId,
+            grossAmount: params.grossAmount,
+            payPeriodStart: params.payPeriodStart,
+        });
+
+        // Insert payroll record
+        const result = db.prepare(`
+            INSERT INTO payroll_records (
+                caregiver_id, employer_id, pay_period_start, pay_period_end,
+                total_hours, gross_wages, net_pay,
+                ss_employee, medicare_employee, federal_withholding,
+                ss_employer, medicare_employer, futa,
+                colorado_suta, colorado_famli_employee, colorado_famli_employer,
+                calculation_version, tax_version, is_finalized, status,
+                entry_type, manual_description, manual_gross_amount,
+                payment_date, created_at, check_number
+            ) VALUES (
+                ?, ?, ?, ?,
+                0, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                'manual-1.0', 'CO-2024', 1, 'approved',
+                'manual', ?, ?,
+                ?, datetime('now'), ?
+            )
+        `).run(
+            params.caregiverId,
+            params.employerId,
+            params.payPeriodStart,
+            params.payPeriodEnd,
+            params.grossAmount,
+            taxes.netPay,
+            taxes.ssEmployee,
+            taxes.medicareEmployee,
+            taxes.federalWithholding,
+            taxes.ssEmployer,
+            taxes.medicareEmployer,
+            taxes.futa,
+            taxes.coloradoSuta,
+            taxes.coloradoFamliEmployee,
+            taxes.coloradoFamliEmployer,
+            params.description,
+            params.grossAmount,
+            params.paymentDate || params.payPeriodEnd,
+            params.checkNumber || null
+        );
+
+        // Fetch and return created record
+        const record = PayrollService.getPayrollRecordById(result.lastInsertRowid as number);
+        if (!record) {
+            throw new Error('Failed to create manual payroll record');
+        }
+
+        // Audit log
+        try {
+            await AuditService.log({
+                action: 'CREATE',
+                tableName: 'payroll_records',
+                recordId: record.id,
+                changesJson: JSON.stringify({
+                    type: 'manual',
+                    description: params.description,
+                    grossAmount: params.grossAmount,
+                    caregiverId: params.caregiverId,
+                    employerId: params.employerId
+                }),
+            });
+        } catch (auditError) {
+            console.error('Failed to log audit:', auditError);
+            // Don't fail the whole operation if audit fails
+        }
+
+        return record;
+    }
 }
+
+/**
+ * Calculate taxes for manual payroll entry
+ */
