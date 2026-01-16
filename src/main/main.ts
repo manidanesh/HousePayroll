@@ -119,35 +119,92 @@ app.on('ready', () => {
         }
     });
 
+    // Create main window
     createWindow();
 
-    // Check for updates
+    // ============================================================================
+    // AUTO-UPDATE SYSTEM (GitHub Releases)
+    // ============================================================================
     if (app.isPackaged) {
+        // Configure auto-updater
+        autoUpdater.logger = logger;
+        autoUpdater.autoDownload = false; // Ask user before downloading
+        autoUpdater.autoInstallOnAppQuit = true;
+
         logger.info('Checking for updates');
-        autoUpdater.checkForUpdatesAndNotify();
+
+        // Check for updates on startup (after 3 seconds)
+        setTimeout(() => {
+            autoUpdater.checkForUpdatesAndNotify();
+        }, 3000);
+
+        // Check for updates every 4 hours
+        setInterval(() => {
+            autoUpdater.checkForUpdatesAndNotify();
+        }, 4 * 60 * 60 * 1000);
+    } else {
+        logger.info('Auto-updater disabled in development mode');
     }
 });
 
-// Auto-update event listeners
-autoUpdater.on('update-available', () => {
-    logger.info('Update available');
+
+// ============================================================================
+// AUTO-UPDATE EVENT HANDLERS
+// ============================================================================
+autoUpdater.on('update-available', (info) => {
+    logger.info('Update available', { version: info.version });
+    if (mainWindow) {
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Update Available',
+            message: `A new version (${info.version}) is available!\n\nWould you like to download it now?`,
+            detail: 'The update will be downloaded in the background.',
+            buttons: ['Download', 'Later'],
+            defaultId: 0,
+            cancelId: 1
+        }).then((result) => {
+            if (result.response === 0) {
+                logger.info('User chose to download update');
+                autoUpdater.downloadUpdate();
+            } else {
+                logger.info('User postponed update');
+            }
+        });
+    }
 });
 
-autoUpdater.on('update-downloaded', (_info) => {
-    logger.info('Update downloaded, prompting user');
-    dialog.showMessageBox({
-        type: 'info',
-        title: 'Update Ready',
-        message: 'A new version of Household Payroll has been downloaded. Restart the application to apply the updates?',
-        buttons: ['Restart', 'Later']
-    }).then((result) => {
-        if (result.response === 0) {
-            logger.info('User chose to restart for update');
-            autoUpdater.quitAndInstall();
-        } else {
-            logger.info('User chose to update later');
-        }
-    });
+autoUpdater.on('update-not-available', () => {
+    logger.info('No updates available - app is up to date');
+});
+
+autoUpdater.on('download-progress', (progress) => {
+    logger.info(`Download progress: ${Math.round(progress.percent)}%`);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+    logger.info('Update downloaded', { version: info.version });
+    if (mainWindow) {
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Update Ready',
+            message: `Version ${info.version} has been downloaded and is ready to install.`,
+            detail: 'The application will restart to apply the update. All your data will be preserved.',
+            buttons: ['Restart Now', 'Restart Later'],
+            defaultId: 0,
+            cancelId: 1
+        }).then((result) => {
+            if (result.response === 0) {
+                logger.info('User chose to restart for update');
+                autoUpdater.quitAndInstall(false, true);
+            } else {
+                logger.info('User chose to update later - will install on next restart');
+            }
+        });
+    }
+});
+
+autoUpdater.on('error', (err) => {
+    logger.error('Auto-updater error', err);
 });
 
 app.on('window-all-closed', () => {

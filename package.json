@@ -103,7 +103,7 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.5.0",
     "electron-store": "^11.0.2",
-    "electron-updater": "^6.6.2",
+    "electron-updater": "^6.7.3",
     "jspdf": "^4.0.0",
     "pdfkit": "^0.17.2",
     "react": "^19.2.3",
