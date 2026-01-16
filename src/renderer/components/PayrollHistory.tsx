@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { ipcAPI } from '../lib/ipc';
 import PayrollDetail from './PayrollDetail';
 import UnpaidWorkCalendar from './UnpaidWorkCalendar';
 import { useCaregiver } from '../context/caregiver-context';
+import { PaystubGenerator } from '../../utils/paystub-generator';
 
 const PayrollHistory: React.FC = () => {
     const { selectedCaregiver } = useCaregiver();
@@ -35,6 +37,33 @@ const PayrollHistory: React.FC = () => {
     useEffect(() => {
         loadHistory();
     }, []);
+
+    const handleDownloadPDF = async (e: React.MouseEvent, recordId: number) => {
+        e.stopPropagation(); // Prevent row click
+        const toastId = toast.loading('Generating PDF...');
+
+        try {
+            const context = await ipcAPI.payroll.getPaystubContext(recordId);
+            if (!context) throw new Error('Record not found');
+
+            const employer = await ipcAPI.employer.get();
+            const caregiver = await ipcAPI.caregiver.getById(context.record.caregiverId);
+
+            const defaultName = `Paystub_${caregiver.fullLegalName}_${context.record.paymentDate}.pdf`;
+            const pdfBytes = PaystubGenerator.generatePDFBytes(context, employer, caregiver);
+
+            const result = await ipcAPI.system.promptSaveFile(defaultName, pdfBytes);
+
+            if (result.success) {
+                toast.success('PDF saved successfully', { id: toastId });
+            } else {
+                toast.dismiss(toastId);
+            }
+        } catch (err: any) {
+            console.error(err);
+            toast.error(`Failed to download PDF: ${err.message}`, { id: toastId });
+        }
+    };
 
     const f = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -113,6 +142,7 @@ const PayrollHistory: React.FC = () => {
                                         <th>Taxes</th>
                                         <th>Net Pay</th>
                                         <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -137,6 +167,16 @@ const PayrollHistory: React.FC = () => {
                                                     <span className={`status-badge ${record.isVoided ? 'inactive' : 'active'}`}>
                                                         {record.isVoided ? 'VOIDED' : 'PAID'}
                                                     </span>
+                                                </td>
+                                                <td onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        className="btn-small btn-secondary"
+                                                        onClick={(e) => handleDownloadPDF(e, record.id)}
+                                                        title="Download Paystub PDF"
+                                                        style={{ padding: '4px 8px', fontSize: '12px' }}
+                                                    >
+                                                        ⬇️ PDF
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
@@ -189,7 +229,7 @@ const PayrollHistory: React.FC = () => {
                         );
                     })()
                 )}
-            </div>
+            </div >
 
             <UnpaidWorkCalendar />
 
@@ -215,7 +255,7 @@ const PayrollHistory: React.FC = () => {
                 .status-badge.pending { background-color: #fff3e0; color: #ef6c00; }
                 .status-badge.failed { background-color: #ffebee; color: #d32f2f; }
             `}</style>
-        </div>
+        </div >
     );
 };
 

@@ -3,6 +3,7 @@
  */
 
 import { getDatabase, encrypt, decrypt } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { AuditService } from './audit-service';
 
 export interface Employer {
@@ -42,20 +43,60 @@ export interface Employer {
     createdAt: string;
 }
 
-export class EmployerService {
+export class EmployerService extends BaseRepository<Employer> {
+
+    // Maintain static methods for backward compatibility during migration
+    static createEmployer(data: any): Employer {
+        const service = new EmployerService(getDatabase());
+        return service.create(data);
+    }
+
+    static getEmployer(): Employer | null {
+        const service = new EmployerService(getDatabase());
+        return service.getCurrentEmployer();
+    }
+
+    static getAllEmployers(): Employer[] {
+        const service = new EmployerService(getDatabase());
+        return service.getAll();
+    }
+
+    static updateEmployer(data: any): Employer {
+        const service = new EmployerService(getDatabase());
+        const current = service.getCurrentEmployer();
+        if (!current) throw new Error('No employer profile found');
+        return service.update(current.id, data);
+    }
+
+    static deleteEmployer(id: number): void {
+        const service = new EmployerService(getDatabase());
+        service.delete(id);
+    }
+
+    static hasEmployerProfile(): boolean {
+        const service = new EmployerService(getDatabase());
+        return service.hasEmployerProfile();
+    }
+
+    static setActiveEmployer(id: number): void {
+        const service = new EmployerService(getDatabase());
+        service.setActiveEmployer(id);
+    }
+
+    // New Instance Methods
+
     /**
      * Check if employer profile exists
      */
-    static hasEmployerProfile(): boolean {
-        const db = getDatabase();
-        const result = db.prepare('SELECT COUNT(*) as count FROM employers').get() as { count: number };
-        return result.count > 0;
+    hasEmployerProfile(): boolean {
+        const result = this.get<{ count: number }>('SELECT COUNT(*) as count FROM employers');
+        return (result?.count || 0) > 0;
     }
 
     /**
      * Create employer profile
      */
-    static createEmployer(data: {
+    create(data: {
         displayName: string;
         childName?: string;
         ssnOrEin: string;
@@ -71,18 +112,16 @@ export class EmployerService {
         paystubTitle?: string;
         serviceAddress?: string;
     }): Employer {
-        const db = getDatabase();
-
         // Encrypt SSN/EIN
         const ssnOrEinEncrypted = encrypt(data.ssnOrEin);
 
-        const result = db.prepare(`
+        const result = this.run(`
       INSERT INTO employers (
         display_name, child_name, ssn_or_ein_encrypted, pay_frequency, 
         default_hourly_rate, federal_withholding_enabled, colorado_suta_rate,
         address_line1, address_line2, city, state, zip, paystub_title, service_address, is_active
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
             data.displayName,
             data.childName || null,
             ssnOrEinEncrypted,
@@ -98,9 +137,13 @@ export class EmployerService {
             data.paystubTitle || null,
             data.serviceAddress || null,
             0 // New employers not active by default if others exist
-        );
+        ]);
 
-        const employer = this.getEmployer()!;
+        const employer = this.getById(result.lastInsertRowid as number);
+
+        if (!employer) {
+            throw new Error('Failed to create employer');
+        }
 
         // Log audit
         AuditService.log({
@@ -116,15 +159,14 @@ export class EmployerService {
     /**
      * Get the currently active employer profile
      */
-    static getEmployer(): Employer | null {
-        const db = getDatabase();
-        const row = db.prepare('SELECT * FROM employers WHERE is_active = 1 LIMIT 1').get() as any;
+    getCurrentEmployer(): Employer | null {
+        const row = this.get<any>('SELECT * FROM employers WHERE is_active = 1 LIMIT 1');
 
         if (!row) {
             // Fallback to first if none active
-            const first = db.prepare('SELECT * FROM employers ORDER BY id ASC LIMIT 1').get() as any;
+            const first = this.get<any>('SELECT * FROM employers ORDER BY id ASC LIMIT 1');
             if (first) {
-                db.prepare('UPDATE employers SET is_active = 1 WHERE id = ?').run(first.id);
+                this.run('UPDATE employers SET is_active = 1 WHERE id = ?', [first.id]);
                 return this.mapRowToEmployer(first);
             }
             return null;
@@ -133,27 +175,30 @@ export class EmployerService {
         return this.mapRowToEmployer(row);
     }
 
+    getById(id: number): Employer | null {
+        const row = this.get<any>('SELECT * FROM employers WHERE id = ?', [id]);
+        return row ? this.mapRowToEmployer(row) : null;
+    }
+
     /**
      * Get all employer profiles
      */
-    static getAllEmployers(): Employer[] {
-        const db = getDatabase();
-        const rows = db.prepare('SELECT * FROM employers ORDER BY display_name ASC').all() as any[];
+    getAll(): Employer[] {
+        const rows = this.all<any>('SELECT * FROM employers ORDER BY display_name ASC');
         return rows.map(row => this.mapRowToEmployer(row));
     }
 
     /**
      * Set the active employer profile
      */
-    static setActiveEmployer(id: number): void {
-        const db = getDatabase();
-        db.transaction(() => {
-            db.prepare('UPDATE employers SET is_active = 0').run();
-            db.prepare('UPDATE employers SET is_active = 1 WHERE id = ?').run(id);
+    setActiveEmployer(id: number): void {
+        this.db.transaction(() => {
+            this.run('UPDATE employers SET is_active = 0');
+            this.run('UPDATE employers SET is_active = 1 WHERE id = ?', [id]);
         })();
     }
 
-    private static mapRowToEmployer(row: any): Employer {
+    private mapRowToEmployer(row: any): Employer {
         return {
             id: row.id,
             displayName: row.display_name,
@@ -195,41 +240,8 @@ export class EmployerService {
     /**
      * Update employer profile
      */
-    static updateEmployer(data: {
-        displayName?: string;
-        childName?: string;
-        ssnOrEin?: string;
-        payFrequency?: 'weekly' | 'bi-weekly' | 'monthly';
-        defaultHourlyRate?: number;
-        federalWithholdingEnabled?: boolean;
-        coloradoSutaRate?: number;
-        holidayPayMultiplier?: number;
-        weekendPayMultiplier?: number;
-        addressLine1?: string;
-        addressLine2?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-        paystubTitle?: string;
-        serviceAddress?: string;
-        stripePublishableKey?: string;
-        stripeSecretKey?: string;
-        stripeAccountId?: string;
-        paymentVerificationStatus?: 'none' | 'pending' | 'verified';
-        maskedFundingAccount?: string;
-        fein?: string;
-        uiAccountNumber?: string;
-        suiWageBase?: number;
-        suiEffectiveDate?: string;
-        wcAcknowledged?: boolean;
-        wcCarrier?: string;
-        wcPolicyNumber?: string;
-        wcAcknowledgmentDate?: string;
-        coloradoFamliRateEE?: number;
-        coloradoFamliRateER?: number;
-    }): Employer {
-        const db = getDatabase();
-        const current = this.getEmployer();
+    update(id: number, data: Partial<Employer>): Employer {
+        const current = this.getById(id);
 
         if (!current) {
             throw new Error('No employer profile found');
@@ -369,11 +381,9 @@ export class EmployerService {
 
         values.push(current.id);
 
-        db.prepare(`
-      UPDATE employers SET ${updates.join(', ')} WHERE id = ?
-    `).run(...values);
+        this.run(`UPDATE employers SET ${updates.join(', ')} WHERE id = ?`, values);
 
-        const employer = this.getEmployer()!;
+        const employer = this.getById(id)!;
 
         // Log audit
         AuditService.log({
@@ -389,14 +399,13 @@ export class EmployerService {
     /**
      * Delete an employer profile (and all associated data)
      */
-    static deleteEmployer(id: number): void {
-        const db = getDatabase();
-        db.transaction(() => {
-            db.prepare('DELETE FROM payroll_records WHERE employer_id = ?').run(id);
-            db.prepare('DELETE FROM time_entries WHERE employer_id = ?').run(id);
-            db.prepare('DELETE FROM caregivers WHERE employer_id = ?').run(id);
-            db.prepare('DELETE FROM audit_log WHERE employer_id = ?').run(id);
-            db.prepare('DELETE FROM employers WHERE id = ?').run(id);
+    delete(id: number): void {
+        this.db.transaction(() => {
+            this.run('DELETE FROM payroll_records WHERE employer_id = ?', [id]);
+            this.run('DELETE FROM time_entries WHERE employer_id = ?', [id]);
+            this.run('DELETE FROM caregivers WHERE employer_id = ?', [id]);
+            this.run('DELETE FROM audit_log WHERE employer_id = ?', [id]);
+            this.run('DELETE FROM employers WHERE id = ?', [id]);
         })();
     }
 }

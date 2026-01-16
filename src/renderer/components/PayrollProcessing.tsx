@@ -38,6 +38,7 @@ const PayrollProcessing: React.FC = () => {
     const [isPreviewMode, setIsPreviewMode] = useState<boolean>(false);
     const [previewData, setPreviewData] = useState<any | null>(null);
     const [isApproving, setIsApproving] = useState<boolean>(false);
+    const [pendingPayrolls, setPendingPayrolls] = useState<any[]>([]);
 
     useEffect(() => {
         if (calculation && paymentDate) {
@@ -47,6 +48,11 @@ const PayrollProcessing: React.FC = () => {
         }
     }, [calculation, paymentDate]);
 
+    const loadPending = async () => {
+        const drafts = await ipcAPI.payroll.getDrafts();
+        setPendingPayrolls(drafts);
+    };
+
     useEffect(() => {
         const init = async () => {
             const list = await ipcAPI.caregiver.getAll();
@@ -55,6 +61,7 @@ const PayrollProcessing: React.FC = () => {
             setEmployer(emp);
             const isStripeVerified = !!(emp && emp.stripeSecretKey && emp.paymentVerificationStatus === 'verified');
             setStripeAvailable(isStripeVerified);
+            loadPending();
         };
         init();
     }, []);
@@ -88,6 +95,76 @@ const PayrollProcessing: React.FC = () => {
         };
         loadUnpaidSummary();
     }, [selectedCaregiverId]);
+
+    const handleResume = async (record: any) => {
+        setSelectedCaregiverId(record.caregiverId);
+        setStartDate(record.payPeriodStart);
+        setEndDate(record.payPeriodEnd);
+
+        if (record.isFinalized) {
+            // Should not happen given getDrafts filter, but safety check
+            return;
+        }
+
+        const ytd = await ipcAPI.payroll.getYTDContext(record.caregiverId, new Date(record.payPeriodStart).getFullYear());
+        setYtdContext(ytd);
+
+        if (record.status === 'draft') {
+            // Reconstruct preview data from record
+            // Note: This is an approximation since we don't store the exact preview structure
+            // But we have enough to show the preview screen
+            setPreviewData({
+                ...record,
+                taxes: {
+                    socialSecurityEmployee: record.ssEmployee,
+                    medicareEmployee: record.medicareEmployee,
+                    federalWithholding: record.federalWithholding,
+                    coloradoFamliEmployee: record.colorado_famli_employee,
+                    socialSecurityEmployer: record.ssEmployer,
+                    medicareEmployer: record.medicareEmployer,
+                    futa: record.futa,
+                    coloradoSuta: record.colorado_suta,
+                    coloradoFamliEmployer: record.colorado_famli_employer,
+                    coloradoStateIncomeTax: 0, // Not stored explicitly usually
+                    totalEmployerTaxes: (record.ssEmployer || 0) + (record.medicareEmployer || 0) + (record.futa || 0) + (record.colorado_suta || 0) + (record.colorado_famli_employer || 0)
+                },
+                hoursByType: {
+                    regular: record.regular_hours,
+                    weekend: record.weekend_hours,
+                    holiday: record.holiday_hours,
+                    overtime: record.overtime_hours
+                },
+                wagesByType: {
+                    regular: { subtotal: record.regular_wages },
+                    weekend: { subtotal: record.weekend_wages || 0 }, // fallback
+                    holiday: { subtotal: record.holiday_wages || 0 }, // fallback
+                    overtime: { subtotal: record.overtime_wages || 0 } // fallback
+                }
+            });
+            setIsPreviewMode(true);
+        } else if (record.status === 'approved') {
+            // Restore approved state
+            const mappedRecord = {
+                ...record,
+                taxes: {
+                    coloradoFamliEmployee: record.colorado_famli_employee || 0,
+                    socialSecurityEmployer: record.ssEmployer || 0,
+                    medicareEmployer: record.medicareEmployer || 0,
+                    futa: record.futa || 0,
+                    coloradoSuta: record.colorado_suta || 0,
+                    coloradoFamliEmployer: record.colorado_famli_employer || 0,
+                    totalEmployerTaxes: (record.ssEmployer || 0) +
+                        (record.medicareEmployer || 0) +
+                        (record.futa || 0) +
+                        (record.colorado_suta || 0) +
+                        (record.colorado_famli_employer || 0)
+                }
+            };
+            setCalculation(mappedRecord);
+            setIsPreviewMode(false);
+            setPreviewData(null);
+        }
+    };
 
     const handleCalculate = async () => {
         if (!selectedCaregiverId || !startDate || !endDate) {
@@ -148,9 +225,31 @@ const PayrollProcessing: React.FC = () => {
 
             const calculationResult = await ipcAPI.payroll.preview(input);
 
-            // Show preview instead of immediately saving
-            setPreviewData(calculationResult);
-            setIsPreviewMode(true);
+            // 2. Save as draft
+            const draft = await ipcAPI.payroll.saveDraft(calculationResult, startDate, endDate);
+
+            // 3. Immediately approve it (skip preview)
+            const approvedRecord = await ipcAPI.payroll.approve(draft.id);
+
+            // 4. Map to calculation state for finalization
+            const mappedRecord = {
+                ...approvedRecord,
+                taxes: {
+                    coloradoFamliEmployee: approvedRecord.colorado_famli_employee || 0,
+                    socialSecurityEmployer: approvedRecord.ssEmployer || 0,
+                    medicareEmployer: approvedRecord.medicareEmployer || 0,
+                    futa: approvedRecord.futa || 0,
+                    coloradoSuta: approvedRecord.colorado_suta || 0,
+                    coloradoFamliEmployer: approvedRecord.colorado_famli_employer || 0,
+                    totalEmployerTaxes: (approvedRecord.ssEmployer || 0) +
+                        (approvedRecord.medicareEmployer || 0) +
+                        (approvedRecord.futa || 0) +
+                        (approvedRecord.colorado_suta || 0) +
+                        (approvedRecord.colorado_famli_employer || 0)
+                }
+            };
+
+            setCalculation(mappedRecord);
         } catch (error: any) {
             setSuccessModal({ open: true, title: 'Calculation Error', message: `Error: ${error.message}` });
         } finally {
@@ -173,8 +272,26 @@ const PayrollProcessing: React.FC = () => {
             const ytd = await ipcAPI.payroll.getYTDContext(selectedCaregiverId!, new Date(startDate).getFullYear());
             setYtdContext(ytd);
 
-            // Set calculation for finalization step
-            setCalculation(approvedRecord);
+            // Set calculation for finalization step with compatibility mapping
+            // The approved record is flat, but UI expects nested taxes object
+            const mappedRecord = {
+                ...approvedRecord,
+                taxes: {
+                    coloradoFamliEmployee: approvedRecord.colorado_famli_employee || 0,
+                    socialSecurityEmployer: approvedRecord.ssEmployer || 0,
+                    medicareEmployer: approvedRecord.medicareEmployer || 0,
+                    futa: approvedRecord.futa || 0,
+                    coloradoSuta: approvedRecord.colorado_suta || 0,
+                    coloradoFamliEmployer: approvedRecord.colorado_famli_employer || 0,
+                    totalEmployerTaxes: (approvedRecord.ssEmployer || 0) +
+                        (approvedRecord.medicareEmployer || 0) +
+                        (approvedRecord.futa || 0) +
+                        (approvedRecord.colorado_suta || 0) +
+                        (approvedRecord.colorado_famli_employer || 0)
+                }
+            };
+
+            setCalculation(mappedRecord);
             setIsPreviewMode(false);
             setPreviewData(null);
 
@@ -310,6 +427,8 @@ const PayrollProcessing: React.FC = () => {
     return (
         <div className="payroll-processing">
             <h2>Run Payroll</h2>
+
+            {/* Resume Pending Payroll section removed - workflow simplified to go directly from Calculate to Finalize */}
 
             <div className="payroll-controls">
                 {!selectedCaregiver ? (

@@ -181,6 +181,8 @@ export function registerIpcHandlers() {
         return PayrollService.finalizePayroll(id, checkNumber, paymentDate, pdfData, isLatePayment, paymentMethod, checkBankName, checkAccountOwner);
     });
 
+
+
     ipcMain.handle('payroll:checkDuplicateCheckNumber', (_event, checkNumber: string, excludeRecordId?: number) => {
         const employer = EmployerService.getEmployer();
         if (!employer) return false;
@@ -478,6 +480,59 @@ export function registerIpcHandlers() {
         }
         return { success: false };
     });
+
+    // Encrypted Backup Handlers
+    ipcMain.handle('backup:export-encrypted', async (_event, password: string) => {
+        try {
+            const result = await dialog.showSaveDialog({
+                title: 'Export Encrypted Backup',
+                defaultPath: `household-payroll-backup-${new Date().toISOString().split('T')[0]}.hpb`,
+                filters: [{ name: 'Household Payroll Backup', extensions: ['hpb'] }]
+            });
+
+            if (result.filePath) {
+                await BackupService.exportEncryptedBackup(password, result.filePath);
+                logger.info('Encrypted backup exported via IPC', { path: result.filePath });
+                return { success: true, path: result.filePath };
+            }
+            return { success: false };
+        } catch (error: any) {
+            logger.error('Failed to export encrypted backup via IPC', { error: error.message });
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('backup:import-encrypted', async (_event, password: string) => {
+        try {
+            const result = await dialog.showOpenDialog({
+                title: 'Import Encrypted Backup',
+                properties: ['openFile'],
+                filters: [{ name: 'Household Payroll Backup', extensions: ['hpb'] }]
+            });
+
+            if (result.filePaths && result.filePaths.length > 0) {
+                await BackupService.importFromBackup(result.filePaths[0], password);
+                logger.info('Encrypted backup imported via IPC', { path: result.filePaths[0] });
+                return { success: true };
+            }
+            return { success: false };
+        } catch (error: any) {
+            logger.error('Failed to import encrypted backup via IPC', { error: error.message });
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('backup:validate-password', (_event, password: string) => {
+        const { validatePassword } = require('../utils/password-crypto');
+        const error = validatePassword(password);
+        return { valid: !error, error };
+    });
+
+    ipcMain.handle('backup:password-strength', (_event, password: string) => {
+        const { calculatePasswordStrength } = require('../utils/password-crypto');
+        return calculatePasswordStrength(password);
+    });
+
 
     // Colorado Tax Handlers
     ipcMain.handle('tax:getQuarterlyData', (_event, year: number, quarter: number) => {

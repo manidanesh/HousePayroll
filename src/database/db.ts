@@ -84,14 +84,87 @@ export function closeDatabase(): void {
   }
 }
 
+/**
+ * Get current schema version from database
+ * Returns 0 if schema_meta table doesn't exist or is uninitialized
+ */
+export function getSchemaVersion(database: Database.Database): number {
+  try {
+    const result = database.prepare('SELECT version FROM schema_meta WHERE id = 1')
+      .get() as { version: number } | undefined;
+    return result?.version || 0;
+  } catch (err) {
+    // Table doesn't exist yet
+    return 0;
+  }
+}
+
+/**
+ * Update schema version after successful migration
+ */
+export function setSchemaVersion(database: Database.Database, version: number, migrationName: string): void {
+  database.prepare(`
+    UPDATE schema_meta 
+    SET version = ?, applied_at = datetime('now'), last_migration = ?
+    WHERE id = 1
+  `).run(version, migrationName);
+  logger.info(`Schema upgraded to version ${version}: ${migrationName}`);
+}
+
 export function initializeDatabase() {
   const database = getDatabase();
+
+  // ============================================================================
+  // SCHEMA VERSIONING SYSTEM
+  // ============================================================================
+  // Create schema versioning table (must be first)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS schema_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL DEFAULT 0,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_migration TEXT
+    )
+  `);
+
+  // Initialize schema version if needed
+  const versionRow = database.prepare('SELECT version FROM schema_meta WHERE id = 1').get();
+  if (!versionRow) {
+    // Check if this is an existing database by looking for existing tables
+    const tables = database.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table'
+    `).all() as { name: string }[];
+
+    // If we have tables beyond just schema_meta, this is an existing database
+    const existingTableNames = tables.filter(t => t.name !== 'schema_meta').map(t => t.name);
+    const hasExistingDatabase = existingTableNames.length > 0;
+
+    if (hasExistingDatabase) {
+      // Existing database being migrated to versioning system
+      // Mark as version 12 (all migrations through check_bank_name column)
+      database.prepare('INSERT INTO schema_meta (id, version, last_migration) VALUES (1, 12, ?)').run('Migrated to versioning system');
+      logger.info('Existing database detected - marked as schema version 12 (pre-versioning baseline)');
+    } else {
+      // Brand new database - start at version 0
+      database.prepare('INSERT INTO schema_meta (id, version, last_migration) VALUES (1, 0, ?)').run('Initial');
+      logger.info('New database created - schema versioning initialized at version 0');
+    }
+  } else {
+    const currentVersion = (versionRow as { version: number }).version;
+    logger.info(`Database schema version: ${currentVersion}`);
+  }
+
+  // ============================================================================
+  // LEGACY MIGRATION SYSTEM (to be replaced with runMigrations)
+  // ============================================================================
+  // TODO: Extract these into versioned migrations in src/database/migrations.ts
 
   // Create employers table
   database.exec(`
     CREATE TABLE IF NOT EXISTS employers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       display_name TEXT NOT NULL,
+      child_name TEXT,
       ssn_or_ein_encrypted TEXT NOT NULL,
       pay_frequency TEXT NOT NULL CHECK(pay_frequency IN ('weekly', 'bi-weekly', 'monthly')),
       default_hourly_rate REAL NOT NULL,
@@ -131,6 +204,11 @@ export function initializeDatabase() {
       full_legal_name TEXT NOT NULL,
       ssn_encrypted TEXT NOT NULL,
       hourly_rate REAL NOT NULL,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      city TEXT,
+      state TEXT,
+      zip TEXT,
       employer_id INTEGER, -- Foreign Key
       relationship_note TEXT,
       is_active INTEGER DEFAULT 1,
@@ -140,6 +218,14 @@ export function initializeDatabase() {
       payout_method TEXT DEFAULT 'check',
       masked_destination_account TEXT,
       stripe_payout_id_enc TEXT,
+      w4_filing_status TEXT DEFAULT 'single',
+      w4_multiple_jobs INTEGER DEFAULT 0,
+      w4_dependents_amount REAL DEFAULT 0,
+      w4_other_income REAL DEFAULT 0,
+      w4_deductions REAL DEFAULT 0,
+      w4_extra_withholding REAL DEFAULT 0,
+      w4_last_updated TEXT,
+      w4_effective_date TEXT,
       i9_completion_date TEXT,
       i9_notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -217,7 +303,10 @@ export function initializeDatabase() {
       regular_hours REAL DEFAULT 0,
       weekend_hours REAL DEFAULT 0,
       holiday_hours REAL DEFAULT 0,
-                                     -- (Omitted lines for brevity if necessary, but I'll include enough)
+      gross_wages REAL NOT NULL,
+      regular_wages REAL DEFAULT 0,
+      weekend_wages REAL DEFAULT 0,
+      holiday_wages REAL DEFAULT 0,
       ss_employee REAL NOT NULL,
       medicare_employee REAL NOT NULL,
       federal_withholding REAL DEFAULT 0,
@@ -485,6 +574,12 @@ export function initializeDatabase() {
   }
 
   // Migration: Add child_name column to employers table if not exists
+  try {
+    database.exec('ALTER TABLE employers ADD COLUMN child_name TEXT');
+    logger.info('Added child_name column to employers table');
+  } catch (err) {
+    // Column might already exist
+  }
 
   // Migration: Add hfwa_balance to caregivers
   try {
@@ -500,14 +595,46 @@ export function initializeDatabase() {
     database.exec('ALTER TABLE employers ADD COLUMN city TEXT');
     database.exec('ALTER TABLE employers ADD COLUMN state TEXT');
     database.exec('ALTER TABLE employers ADD COLUMN zip TEXT');
+    logger.info('Added address columns to employers table');
+  } catch (err) {
+    // Columns might exist
+  }
 
+  try {
     database.exec('ALTER TABLE caregivers ADD COLUMN address_line1 TEXT');
     database.exec('ALTER TABLE caregivers ADD COLUMN address_line2 TEXT');
     database.exec('ALTER TABLE caregivers ADD COLUMN city TEXT');
     database.exec('ALTER TABLE caregivers ADD COLUMN state TEXT');
     database.exec('ALTER TABLE caregivers ADD COLUMN zip TEXT');
+    logger.info('Added address columns to caregivers table');
   } catch (err) {
     // Columns might exist
+  }
+
+  // Migration: Add W-4 columns to caregivers table
+  try {
+    const w4Cols = [
+      'w4_filing_status TEXT DEFAULT "single"',
+      'w4_multiple_jobs INTEGER DEFAULT 0',
+      'w4_dependents_amount REAL DEFAULT 0',
+      'w4_other_income REAL DEFAULT 0',
+      'w4_deductions REAL DEFAULT 0',
+      'w4_extra_withholding REAL DEFAULT 0',
+      'w4_last_updated TEXT',
+      'w4_effective_date TEXT'
+    ];
+
+    for (const colDef of w4Cols) {
+      try {
+        const colName = colDef.split(' ')[0];
+        database.exec(`ALTER TABLE caregivers ADD COLUMN ${colDef}`);
+        logger.info(`Added ${colName} to caregivers table`);
+      } catch (e) {
+        // Column likely exists
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to run W-4 migration', err);
   }
 
   try {
@@ -538,6 +665,24 @@ export function initializeDatabase() {
     database.exec('ALTER TABLE employers ADD COLUMN stripe_account_id_enc TEXT');
     database.exec('ALTER TABLE employers ADD COLUMN payment_verification_status TEXT DEFAULT "none"');
     database.exec('ALTER TABLE employers ADD COLUMN masked_funding_account TEXT');
+  } catch (err) { }
+
+  // Migration: Add missing wage columns to payroll_records check (fix for broken create table)
+  try {
+    const wageCols = [
+      'gross_wages REAL DEFAULT 0',
+      'regular_wages REAL DEFAULT 0',
+      'weekend_wages REAL DEFAULT 0',
+      'holiday_wages REAL DEFAULT 0'
+    ];
+    for (const col of wageCols) {
+      try {
+        database.exec(`ALTER TABLE payroll_records ADD COLUMN ${col}`);
+        logger.info(`Added ${col.split(' ')[0]} to payroll_records`);
+      } catch (e) {
+        // Column exists
+      }
+    }
   } catch (err) { }
 
   try {
@@ -624,6 +769,29 @@ export function initializeDatabase() {
     }
   } catch (err) {
     logger.error('Failed to add status column', err);
+  }
+
+  // Migration: Add check_bank_name and check_account_owner columns to payroll_records
+  try {
+    const checkBankNameExists = database.prepare(`
+      SELECT COUNT(*) as count FROM pragma_table_info('payroll_records') WHERE name='check_bank_name'
+    `).get() as { count: number };
+
+    if (checkBankNameExists.count === 0) {
+      database.exec('ALTER TABLE payroll_records ADD COLUMN check_bank_name TEXT');
+      logger.info('Added check_bank_name column to payroll_records table');
+    }
+
+    const checkAccountOwnerExists = database.prepare(`
+      SELECT COUNT(*) as count FROM pragma_table_info('payroll_records') WHERE name='check_account_owner'
+    `).get() as { count: number };
+
+    if (checkAccountOwnerExists.count === 0) {
+      database.exec('ALTER TABLE payroll_records ADD COLUMN check_account_owner TEXT');
+      logger.info('Added check_account_owner column to payroll_records table');
+    }
+  } catch (err) {
+    logger.error('Failed to add check banking info columns', err);
   }
 
   // Ensure export_logs exists (for older installs)

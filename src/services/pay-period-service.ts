@@ -3,6 +3,7 @@
  */
 
 import { getDatabase } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { EmployerService } from './employer-service';
 
 export interface PayPeriod {
@@ -18,12 +19,30 @@ export interface PayPeriod {
     endDay?: string;   // e.g., "Fri"
 }
 
-export class PayPeriodService {
+export class PayPeriodService extends BaseRepository<any> { // T is implicit/not strict for utility services
+
+    // Abstract implementation dummy
+    create(data: Partial<any>): any { throw new Error('Not implemented'); }
+    update(id: number, data: Partial<any>): any { throw new Error('Not implemented'); }
+    delete(id: number): void { throw new Error('Not implemented'); }
+    getById(id: number): any | null { throw new Error('Not implemented'); }
+
+    // Static Compatibility Layer
+    static generatePeriodsForYear(year: number): PayPeriod[] {
+        return new PayPeriodService(getDatabase()).generatePeriodsForYear(year);
+    }
+
+    static getPeriodsWithStatus(caregiverId: number, year: number): PayPeriod[] {
+        return new PayPeriodService(getDatabase()).getPeriodsWithStatus(caregiverId, year);
+    }
+
+    // Instance Methods
+
     /**
      * Generate bi-weekly pay periods for a given year
      * Starts from January 1st and generates periods throughout the year
      */
-    static generatePeriodsForYear(year: number): PayPeriod[] {
+    generatePeriodsForYear(year: number): PayPeriod[] {
         const periods: PayPeriod[] = [];
         const startOfYear = new Date(year, 0, 1); // January 1st
 
@@ -63,8 +82,8 @@ export class PayPeriodService {
     /**
      * Get pay periods with their current status for a specific caregiver
      */
-    static getPeriodsWithStatus(caregiverId: number, year: number): PayPeriod[] {
-        const db = getDatabase();
+    getPeriodsWithStatus(caregiverId: number, year: number): PayPeriod[] {
+        // We use the static EmployerService for now, can be injected later
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
@@ -73,7 +92,7 @@ export class PayPeriodService {
         // For each period, check status based on time entries
         periods.forEach(period => {
             // Get stats on time entries for this period
-            const stats = db.prepare(`
+            const stats = this.get<any>(`
                 SELECT 
                     COUNT(*) as total_entries,
                     SUM(hours_worked) as total_hours,
@@ -83,7 +102,7 @@ export class PayPeriodService {
                 WHERE caregiver_id = ?
                   AND employer_id = ?
                   AND work_date BETWEEN ? AND ?
-            `).get(caregiverId, employer.id, period.startDate, period.endDate) as any;
+            `, [caregiverId, employer.id, period.startDate, period.endDate]);
 
             if (!stats || stats.total_entries === 0 || (stats.total_hours || 0) === 0) {
                 period.status = 'no-hours';
@@ -106,7 +125,7 @@ export class PayPeriodService {
                 // Try to find a check number from an overlapping finalized payroll 
                 // Only if there are SOME finalized hours
                 if ((period.finalizedHours || 0) > 0) {
-                    const payroll = db.prepare(`
+                    const payroll = this.get<any>(`
                         SELECT id, check_number
                         FROM payroll_records
                         WHERE caregiver_id = ?
@@ -121,13 +140,13 @@ export class PayPeriodService {
                           )
                         ORDER BY payment_date DESC, id DESC
                         LIMIT 1
-                    `).get(
+                    `, [
                         caregiverId, employer.id,
                         period.startDate, period.endDate,
                         period.startDate, period.endDate,
                         period.startDate, period.endDate,
                         period.startDate, period.endDate
-                    ) as any;
+                    ]);
 
                     if (payroll) {
                         period.payrollId = payroll.id;
@@ -143,7 +162,7 @@ export class PayPeriodService {
     /**
      * Format date as YYYY-MM-DD
      */
-    private static formatDate(date: Date): string {
+    private formatDate(date: Date): string {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
@@ -153,7 +172,7 @@ export class PayPeriodService {
     /**
      * Get short day name (e.g., "Mon", "Tue")
      */
-    private static getDayName(date: Date): string {
+    private getDayName(date: Date): string {
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         return days[date.getDay()];
     }

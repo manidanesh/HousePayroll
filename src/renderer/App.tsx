@@ -10,6 +10,9 @@ import { CaregiverProvider, useCaregiver } from './context/caregiver-context';
 import CaregiverSelectionScreen from './components/CaregiverSelectionScreen';
 
 const Main: React.FC = () => {
+    // Window Drag Region
+    const dragRegion = <div className="titlebar-drag-region" />;
+
     const [isPinSet, setIsPinSet] = useState<boolean>(false);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [hasEmployerProfile, setHasEmployerProfile] = useState<boolean>(false);
@@ -97,26 +100,51 @@ const Main: React.FC = () => {
 
     // Step 1: Set up PIN if not configured
     if (!isPinSet) {
-        return <PinSetup onPinSetup={handlePinSetup} />;
+        return (
+            <>
+                {dragRegion}
+                <PinSetup onPinSetup={handlePinSetup} />
+            </>
+        );
     }
 
     // Step 2: Authenticate with PIN
     if (!isAuthenticated) {
-        return <PinLogin onLogin={handleLogin} />;
+        return (
+            <>
+                {dragRegion}
+                <PinLogin onLogin={handleLogin} />
+            </>
+        );
     }
 
     // Step 3: Set up employer profile and first caregiver if not configured
     if (!hasEmployerProfile) {
-        return <OnboardingWizard onComplete={handleEmployerSetup} />;
+        return (
+            <>
+                {dragRegion}
+                <OnboardingWizard onComplete={handleEmployerSetup} />
+            </>
+        );
     }
 
     // Step 4: Core selection (if multiple caregivers)
     if (isSelectionRequired && !selectedCaregiver) {
-        return <CaregiverSelectionScreen onSelect={() => setIsSelectionRequired(false)} />;
+        return (
+            <>
+                {dragRegion}
+                <CaregiverSelectionScreen onSelect={() => setIsSelectionRequired(false)} />
+            </>
+        );
     }
 
     // Step 5: Show main dashboard
-    return <Dashboard />;
+    return (
+        <>
+            {dragRegion}
+            <Dashboard />
+        </>
+    );
 };
 
 const App: React.FC = () => {

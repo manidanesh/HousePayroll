@@ -3,6 +3,7 @@
  */
 
 import { getDatabase } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { EmployerService } from './employer-service';
 
 export interface AuditEntry {
@@ -13,37 +14,45 @@ export interface AuditEntry {
     calculationVersion?: string;
 }
 
-export class AuditService {
-    /**
-     * Log a mutation to the audit_log table
-     */
+export class AuditService extends BaseRepository<any> {
+
+    // Abstract implementation dummy
+    create(data: Partial<any>): any { throw new Error('Use log'); }
+    update(id: number, data: Partial<any>): any { throw new Error('Method not implemented.'); }
+    delete(id: number): void { throw new Error('Method not implemented.'); }
+    getById(id: number): any | null { throw new Error('Method not implemented.'); }
+
+    // Static Compatibility Layer
     static log(entry: AuditEntry): void {
-        const db = getDatabase();
+        new AuditService(getDatabase()).log(entry);
+    }
+
+    static getAllLogs(): any[] {
+        return new AuditService(getDatabase()).getAllLogs();
+    }
+
+    // Instance Methods
+    log(entry: AuditEntry): void {
         const employer = EmployerService.getEmployer();
 
         try {
-            db.prepare(`
+            this.run(`
                 INSERT INTO audit_log (table_name, record_id, employer_id, action, changes_json, calculation_version)
                 VALUES (?, ?, ?, ?, ?, ?)
-            `).run(
+            `, [
                 entry.tableName,
                 entry.recordId,
                 employer?.id || null,
                 entry.action,
                 entry.changesJson || null,
                 entry.calculationVersion || null
-            );
+            ]);
         } catch (err) {
             console.error('Failed to write audit log:', err);
-            // We don't throw here to avoid failing the main operation if audit logging fails
-            // but in a strictly compliant system, we might want to.
         }
     }
 
-    /**
-     * Get all audit logs
-     */
-    static getAllLogs(): Array<{
+    getAllLogs(): Array<{
         id: number;
         table_name: string;
         record_id: number;
@@ -52,10 +61,9 @@ export class AuditService {
         calculation_version: string | null;
         timestamp: string;
     }> {
-        const db = getDatabase();
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
-        return db.prepare('SELECT * FROM audit_log WHERE employer_id = ? ORDER BY timestamp DESC').all(employer.id) as any;
+        return this.all<any>('SELECT * FROM audit_log WHERE employer_id = ? ORDER BY timestamp DESC, id DESC', [employer.id]);
     }
 }

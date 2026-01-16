@@ -299,6 +299,7 @@ export interface PayrollRecord {
     taxVersion: string;
     isFinalized: boolean;
     isMinimumWageCompliant?: boolean;
+    status?: 'draft' | 'approved';
     checkNumber?: string;
     checkBankName?: string;
     checkAccountOwner?: string;

@@ -1,4 +1,5 @@
 import { getDatabase } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { StripeService } from './stripe-service';
 import { EmployerService } from './employer-service';
 import { CaregiverService } from './caregiver-service';
@@ -18,35 +19,65 @@ export interface PaymentRecord {
     updatedAt: string;
 }
 
-export class PaymentService {
-    /**
-     * Create a new payment record
-     */
-    static createRecord(data: {
+export class PaymentService extends BaseRepository<PaymentRecord> {
+
+    // Abstract implementation dummy
+    create(data: Partial<PaymentRecord>): PaymentRecord { throw new Error('Use createRecord'); }
+    update(id: number, data: Partial<PaymentRecord>): PaymentRecord { throw new Error('Method not implemented.'); }
+    delete(id: number): void { throw new Error('Method not implemented.'); }
+    getById(id: number): PaymentRecord | null { return this.getPaymentById(id); }
+
+    // Static Compatibility Layer
+    static createRecord(data: { caregiverId: number, payrollRecordId?: number, amount: number, stripeId?: string, status: 'pending' | 'paid' | 'failed' }): PaymentRecord {
+        return new PaymentService(getDatabase()).createRecord(data);
+    }
+
+    static logTransaction(payment: PaymentRecord): void {
+        new PaymentService(getDatabase()).logTransaction(payment);
+    }
+
+    static getById(id: number): PaymentRecord | null {
+        return new PaymentService(getDatabase()).getPaymentById(id);
+    }
+
+    static updateStatus(id: number, status: 'pending' | 'paid' | 'failed', errorMessage?: string): void {
+        new PaymentService(getDatabase()).updateStatus(id, status, errorMessage);
+    }
+
+    static getHistory(limit = 50, caregiverId?: number): PaymentRecord[] {
+        return new PaymentService(getDatabase()).getHistory(limit, caregiverId);
+    }
+
+    static getTransactionHistory(limit = 100, caregiverId?: number): any[] {
+        return new PaymentService(getDatabase()).getTransactionHistory(limit, caregiverId);
+    }
+
+    // Instance Methods
+
+    createRecord(data: {
         caregiverId: number,
         payrollRecordId?: number,
         amount: number,
         stripeId?: string,
         status: 'pending' | 'paid' | 'failed'
     }): PaymentRecord {
-        const db = getDatabase();
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No active employer profile found');
 
-        const result = db.prepare(`
+        const result = this.run(`
             INSERT INTO payments (
                 employer_id, caregiver_id, payroll_record_id, amount, stripe_id, status
             ) VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
+        `, [
             employer.id,
             data.caregiverId,
             data.payrollRecordId || null,
             data.amount,
             data.stripeId || null,
             data.status
-        );
+        ]);
 
-        const record = this.getById(result.lastInsertRowid as number)!;
+        const record = this.getPaymentById(result.lastInsertRowid as number)!;
 
         // Log to immutable ledger
         this.logTransaction(record);
@@ -54,25 +85,21 @@ export class PaymentService {
         return record;
     }
 
-    /**
-     * Log to immutable payment_transactions ledger
-     */
-    static logTransaction(payment: PaymentRecord): void {
-        const db = getDatabase();
+    logTransaction(payment: PaymentRecord): void {
         const employer = EmployerService.getEmployer();
-        const caregiver = CaregiverService.getCaregiverById(payment.caregiverId);
+        const caregiver = new CaregiverService(this.db).getById(payment.caregiverId);
 
         if (!employer || !caregiver) return;
 
-        db.prepare(`
+        this.run(`
             INSERT INTO payment_transactions (
                 id, payroll_record_id, employer_id, caregiver_id, amount_cents,
                 status, stripe_tx_id, source_masked, dest_masked,
                 idempotency_key, tax_logic_version
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `, [
             randomUUID(),
-            payment.payrollRecordId || 0,
+            payment.payrollRecordId || null,
             employer.id,
             caregiver.id,
             Math.round(payment.amount * 100),
@@ -82,15 +109,11 @@ export class PaymentService {
             caregiver.maskedDestinationAccount || 'Unknown Caregiver Account',
             `pay_${payment.id}_${payment.status}`, // Simple idempotency
             '1.0.0' // Placeholder for tax logic version
-        );
+        ]);
     }
 
-    /**
-     * Get payment record by ID
-     */
-    static getById(id: number): PaymentRecord | null {
-        const db = getDatabase();
-        const row = db.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    getPaymentById(id: number): PaymentRecord | null {
+        const row = this.get<any>('SELECT * FROM payments WHERE id = ?', [id]);
         if (!row) return null;
 
         return {
@@ -108,23 +131,15 @@ export class PaymentService {
         };
     }
 
-    /**
-     * Update payment status
-     */
-    static updateStatus(id: number, status: 'pending' | 'paid' | 'failed', errorMessage?: string): void {
-        const db = getDatabase();
-        db.prepare(`
+    updateStatus(id: number, status: 'pending' | 'paid' | 'failed', errorMessage?: string): void {
+        this.run(`
             UPDATE payments 
             SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE id = ?
-        `).run(status, errorMessage || null, id);
+        `, [status, errorMessage || null, id]);
     }
 
-    /**
-     * Get payment history for the active employer
-     */
-    static getHistory(limit = 50, caregiverId?: number): PaymentRecord[] {
-        const db = getDatabase();
+    getHistory(limit = 50, caregiverId?: number): PaymentRecord[] {
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
@@ -132,7 +147,7 @@ export class PaymentService {
             SELECT * FROM payments 
             WHERE employer_id = ? 
         `;
-        const params = [employer.id];
+        const params: any[] = [employer.id];
 
         if (caregiverId) {
             query += ` AND caregiver_id = ?`;
@@ -142,7 +157,7 @@ export class PaymentService {
         query += ` ORDER BY created_at DESC LIMIT ?`;
         params.push(limit);
 
-        const rows = db.prepare(query).all(...params) as any[];
+        const rows = this.all<any>(query, params);
 
         return rows.map(row => ({
             id: row.id,
@@ -159,10 +174,7 @@ export class PaymentService {
         }));
     }
 
-    /**
-     * Get immutable transaction ledger
-     */
-    static getTransactionHistory(limit = 100, caregiverId?: number): Array<{
+    getTransactionHistory(limit = 100, caregiverId?: number): Array<{
         id: string;
         payroll_record_id: number;
         employer_id: number;
@@ -177,7 +189,6 @@ export class PaymentService {
         created_at: string;
         caregiver_name: string;
     }> {
-        const db = getDatabase();
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
@@ -187,7 +198,7 @@ export class PaymentService {
             JOIN caregivers c ON pt.caregiver_id = c.id
             WHERE pt.employer_id = ?
         `;
-        const params = [employer.id];
+        const params: any[] = [employer.id];
 
         if (caregiverId) {
             query += ` AND pt.caregiver_id = ?`;
@@ -197,6 +208,6 @@ export class PaymentService {
         query += ` ORDER BY pt.created_at DESC LIMIT ?`;
         params.push(limit);
 
-        return db.prepare(query).all(...params) as any;
+        return this.all<any>(query, params);
     }
 }

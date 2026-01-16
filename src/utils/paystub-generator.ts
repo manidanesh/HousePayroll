@@ -252,9 +252,49 @@ export class PaystubGenerator {
         drawDeductionRow('CO SUI (Employer)', record.colorado_suta || 0, ytd.coloradoSuta);
         drawDeductionRow('CO FAMLI (Employer)', record.colorado_famli_employer || 0, ytd.coloradoFamliEmployer);
 
-        // --- TOTALS FOOTER ---
+        // --- CURRENT PERIOD SUMMARY TABLE ---
+        const summaryY = Math.max(leftY, rightY) + 10;
+
+        // Calculate totals for current period
+        const currentGross = record.grossWages;
+        const currentEmployeeDeductions = record.ssEmployee + record.medicareEmployee + record.federalWithholding + (record.colorado_famli_employee || 0);
+        const currentEmployerTaxes = record.ssEmployer + record.medicareEmployer + record.futa + (record.colorado_suta || 0) + (record.colorado_famli_employer || 0);
+        const currentNet = record.netPay;
+
+        // Draw summary table header
+        doc.setFillColor(50, 50, 50);
+        doc.rect(15, summaryY, 180, 7, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+
+        // Column headers
+        doc.text('Gross Pay', 25, summaryY + 5, { align: 'center' });
+        doc.text('Total Deduction', 70, summaryY + 5, { align: 'center' });
+        doc.text('Total Deduction', 115, summaryY + 5, { align: 'center' });
+        doc.text('Net Pay', 160, summaryY + 5, { align: 'center' });
+
+        // Second line for subheaders
+        doc.setFontSize(7);
+        doc.text('(Employee)', 70, summaryY + 4.5, { align: 'center' });
+        doc.text('(Employer)', 115, summaryY + 4.5, { align: 'center' });
+
+        // Draw values row
+        const valuesY = summaryY + 7;
+        doc.setFillColor(245, 245, 245);
+        doc.rect(15, valuesY, 180, 8, 'F');
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+
+        doc.text(`$${currentGross.toFixed(2)}`, 25, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentEmployeeDeductions.toFixed(2)}`, 70, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentEmployerTaxes.toFixed(2)}`, 115, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentNet.toFixed(2)}`, 160, valuesY + 5.5, { align: 'center' });
+
+        // --- TOTALS FOOTER (YTD) ---
         // Align the bottom of both columns
-        const footerY = Math.max(leftY, rightY) + 10;
+        const footerY = summaryY + 25;
 
         // Black Bar Background
         doc.setFillColor(40, 40, 40);

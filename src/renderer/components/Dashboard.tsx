@@ -9,6 +9,7 @@ import AuditLog from './AuditLog';
 import PaymentsDashboard from './PaymentsDashboard';
 import HouseholdSwitcher from './HouseholdSwitcher';
 import { useCaregiver } from '../context/caregiver-context';
+import { ipcAPI } from '../lib/ipc';
 
 const Dashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<string>('caregivers');
@@ -26,6 +27,24 @@ const Dashboard: React.FC = () => {
             localStorage.setItem('theme', 'light');
         }
     }, [isDarkMode]);
+
+    React.useEffect(() => {
+        // macOS Touch Bar & Menu integration logic
+        const removeNav = ipcAPI.system.on('navigate', (event: any, path: string) => {
+            if (path.includes('/caregivers')) setActiveTab('caregivers');
+            else if (path.includes('/payroll/run')) setActiveTab('payroll');
+            else if (path.includes('/settings')) setActiveTab('settings');
+        });
+
+        const removePayroll = ipcAPI.system.on('verify-payroll-status', () => {
+            setActiveTab('payroll');
+        });
+
+        return () => {
+            removeNav();
+            removePayroll();
+        };
+    }, []);
 
     const toggleTheme = () => setIsDarkMode(!isDarkMode);
 

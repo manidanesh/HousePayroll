@@ -6,7 +6,8 @@
  * All federal reporting must be aggregated annually for Schedule H. 
  * DO NOT implement quarterly federal export logic.
  */
-import { getDatabase } from '../database/db';
+import { getDatabase, decrypt } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { EmployerService } from './employer-service';
 import * as crypto from 'crypto';
 
@@ -22,9 +23,9 @@ export interface YTDSummary {
     medicareEmployer: number;
     futa: number;
     coloradoSuta: number;
-    coloradoFamliEmployee: number; // Added
-    coloradoFamliEmployer: number; // Added
-    overtimeWages: number; // Added
+    coloradoFamliEmployee: number;
+    coloradoFamliEmployer: number;
+    overtimeWages: number;
     totalEmployerTaxes: number;
 }
 
@@ -37,12 +38,54 @@ export interface TaxCapStatus {
     sutaReached: boolean;
 }
 
-export class ReportingService {
-    /**
-     * Get YTD summary for all caregivers
-     */
+export class ReportingService extends BaseRepository<any> {
+
+    // Abstract implementation dummy
+    create(data: Partial<any>): any { throw new Error('Not implemented'); }
+    update(id: number, data: Partial<any>): any { throw new Error('Not implemented'); }
+    delete(id: number): void { throw new Error('Not implemented'); }
+    getById(id: number): any | null { throw new Error('Not implemented'); }
+
+    // Static Compatibility Layer
     static getYTDSummary(year: number, caregiverId?: number): YTDSummary[] {
-        const db = getDatabase();
+        return new ReportingService(getDatabase()).getYTDSummary(year, caregiverId);
+    }
+
+    static getTaxCapStatus(year: number, caregiverId?: number): TaxCapStatus[] {
+        return new ReportingService(getDatabase()).getTaxCapStatus(year, caregiverId);
+    }
+
+    static generateW2CSV(year: number): string {
+        return new ReportingService(getDatabase()).generateW2CSV(year);
+    }
+
+    static generateFAMLI_CSV(year: number, quarter: number): string {
+        return new ReportingService(getDatabase()).generateFAMLI_CSV(year, quarter);
+    }
+
+    static generateScheduleHSUM(year: number): string {
+        return new ReportingService(getDatabase()).generateScheduleHSUM(year);
+    }
+
+    static getScheduleHData(year: number): any {
+        return new ReportingService(getDatabase()).getScheduleHData(year);
+    }
+
+    static getMonthlyWageTrends(year: number, caregiverId?: number): any[] {
+        return new ReportingService(getDatabase()).getMonthlyWageTrends(year, caregiverId);
+    }
+
+    static getRecentPayments(limit = 20): any[] {
+        return new ReportingService(getDatabase()).getRecentPayments(limit);
+    }
+
+    static logExport(type: string, year: number, quarter: number | null, filename: string, content: string): void {
+        new ReportingService(getDatabase()).logExport(type, year, quarter, filename, content);
+    }
+
+    // Instance Methods
+
+    getYTDSummary(year: number, caregiverId?: number): YTDSummary[] {
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
@@ -69,7 +112,7 @@ export class ReportingService {
             LEFT JOIN payroll_records pr ON c.id = pr.caregiver_id
             WHERE pr.employer_id = ? AND pr.pay_period_end BETWEEN ? AND ? AND pr.is_finalized = 1 AND pr.is_voided = 0
         `;
-        const params = [employer.id, startDate, endDate];
+        const params: any[] = [employer.id, startDate, endDate];
 
         if (caregiverId) {
             query += ` AND c.id = ?`;
@@ -78,7 +121,7 @@ export class ReportingService {
 
         query += ` GROUP BY c.id`;
 
-        const rows = db.prepare(query).all(...params) as any[];
+        const rows = this.all<any>(query, params);
 
         return rows.map(row => ({
             caregiverId: row.caregiver_id,
@@ -99,10 +142,7 @@ export class ReportingService {
         }));
     }
 
-    /**
-     * Get tax cap status for all caregivers
-     */
-    static getTaxCapStatus(year: number, caregiverId?: number): TaxCapStatus[] {
+    getTaxCapStatus(year: number, caregiverId?: number): TaxCapStatus[] {
         const ytd = this.getYTDSummary(year, caregiverId);
 
         return ytd.map(item => ({
@@ -115,10 +155,7 @@ export class ReportingService {
         }));
     }
 
-    /**
-     * Generate CSV content for W-2 export
-     */
-    static generateW2CSV(year: number): string {
+    generateW2CSV(year: number): string {
         const data = this.getYTDSummary(year);
         const headers = ['Employee Name', 'Gross Wages', 'Social Security Tax', 'Medicare Tax', 'Federal Income Tax', 'CO FAMLI (EE)'];
 
@@ -134,11 +171,7 @@ export class ReportingService {
         return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     }
 
-    /**
-     * Generate CSV content for Colorado FAMLI quarterly filing (My FAMLI+)
-     */
-    static generateFAMLI_CSV(year: number, quarter: number): string {
-        const db = getDatabase();
+    generateFAMLI_CSV(year: number, quarter: number): string {
         const employer = EmployerService.getEmployer();
         if (!employer) return '';
 
@@ -151,7 +184,7 @@ export class ReportingService {
 
         const { start, end } = quarterDates[quarter - 1];
 
-        const rows = db.prepare(`
+        const rows = this.all<any>(`
             SELECT 
                 c.full_legal_name,
                 c.ssn_encrypted,
@@ -162,11 +195,10 @@ export class ReportingService {
             JOIN payroll_records pr ON c.id = pr.caregiver_id
             WHERE pr.employer_id = ? AND pr.pay_period_end BETWEEN ? AND ? AND pr.is_finalized = 1 AND pr.is_voided = 0
             GROUP BY c.id
-        `).all(employer.id, start, end) as any[];
+        `, [employer.id, start, end]);
 
         const headers = ['Employee Name', 'SSN', 'Gross Wages', 'EE Contribution', 'Employer Contribution'];
         const csvRows = rows.map(row => {
-            const decrypt = require('../database/db').decrypt;
             return [
                 row.full_legal_name,
                 decrypt(row.ssn_encrypted),
@@ -179,10 +211,7 @@ export class ReportingService {
         return [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
     }
 
-    /**
-     * Generate CSV content for Schedule H summary
-     */
-    static generateScheduleHSUM(year: number): string {
+    generateScheduleHSUM(year: number): string {
         const data = this.getYTDSummary(year);
         const totals = data.reduce((acc, curr) => ({
             gross: acc.gross + curr.grossWages,
@@ -202,10 +231,7 @@ export class ReportingService {
         return [headers.join(','), row.join(',')].join('\n');
     }
 
-    /**
-     * Get detailed breakdown for Schedule H line items (Federal)
-     */
-    static getScheduleHData(year: number): {
+    getScheduleHData(year: number): {
         line1: number;
         line2: number;
         line3: number;
@@ -253,16 +279,12 @@ export class ReportingService {
         };
     }
 
-    /**
-     * Get monthly wage trends for a given year
-     */
-    static getMonthlyWageTrends(year: number, caregiverId?: number): Array<{
+    getMonthlyWageTrends(year: number, caregiverId?: number): Array<{
         month: string;
         grossWages: number;
         netPay: number;
         hours: number;
     }> {
-        const db = getDatabase();
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
@@ -282,14 +304,14 @@ export class ReportingService {
                 FROM payroll_records 
                 WHERE employer_id = ? AND pay_period_end BETWEEN ? AND ? AND is_finalized = 1 AND is_voided = 0
             `;
-            const params = [employer.id, start, end];
+            const params: any[] = [employer.id, start, end];
 
             if (caregiverId) {
                 query += ` AND caregiver_id = ?`;
                 params.push(caregiverId);
             }
 
-            const row = db.prepare(query).get(...params) as any;
+            const row = this.get<any>(query, params);
 
             data.push({
                 name: months[i - 1],
@@ -299,10 +321,7 @@ export class ReportingService {
         return data;
     }
 
-    /**
-     * Get recent payment history
-     */
-    static getRecentPayments(limit = 20): Array<{
+    getRecentPayments(limit = 20): Array<{
         id: number;
         caregiverId: number;
         caregiverName: string;
@@ -310,34 +329,29 @@ export class ReportingService {
         status: string;
         createdAt: string;
     }> {
-        const db = getDatabase();
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
-        return db.prepare(`
+        return this.all<any>(`
             SELECT pr.*, c.full_legal_name as caregiver_name
             FROM payroll_records pr
             JOIN caregivers c ON pr.caregiver_id = c.id
             WHERE pr.employer_id = ?
             ORDER BY pr.pay_period_end DESC
             LIMIT ?
-        `).all(employer.id, limit) as any;
+        `, [employer.id, limit]);
     }
 
-    /**
-     * Log a versioned export for audit purposes
-     */
-    static logExport(type: string, year: number, quarter: number | null, filename: string, content: string): void {
-        const db = getDatabase();
+    logExport(type: string, year: number, quarter: number | null, filename: string, content: string): void {
         const employer = EmployerService.getEmployer();
         if (!employer) return;
 
         const contentHash = crypto.createHash('sha256').update(content).digest('hex');
 
-        db.prepare(`
+        this.run(`
             INSERT INTO export_logs (employer_id, type, year, quarter, filename, content_hash)
             VALUES (?, ?, ?, ?, ?, ?)
-        `).run(employer.id, type, year, quarter, filename, contentHash);
+        `, [employer.id, type, year, quarter, filename, contentHash]);
 
         console.log(`[Audit] Logged ${type} export for ${year} Q${quarter || 'N/A'}: ${filename}`);
     }

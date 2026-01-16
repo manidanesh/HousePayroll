@@ -1,11 +1,33 @@
 /**
  * IPC API - Renderer-side wrapper for IPC communication
  * Provides type-safe API for calling main process functions
+ * 
+ * SECURITY: Uses window.electronAPI exposed via preload script
+ * instead of direct electron access for better security.
  */
 
 import { CreateEmployerInput, UpdateEmployerInput, Employer, CreateCaregiverInput, UpdateCaregiverInput, Caregiver, CreateTimeEntryInput, TimeEntry, PayrollCalculationInput, PayrollCalculationResult, PayrollRecord, CreatePaymentInput, Payment } from '../../types';
 
-const { ipcRenderer } = window.require('electron');
+// Type definition for the electronAPI exposed by preload
+declare global {
+    interface Window {
+        electronAPI: {
+            invoke: (channel: string, ...args: any[]) => Promise<any>;
+            on: (channel: string, callback: (event: any, ...args: any[]) => void) => () => void;
+        };
+        versions: {
+            node: string;
+            chrome: string;
+            electron: string;
+        };
+    }
+}
+
+// Use the secure electronAPI from preload script
+const ipcRenderer = {
+    invoke: window.electronAPI.invoke,
+    on: window.electronAPI.on
+};
 
 export const ipcAPI = {
     // Auth
@@ -110,6 +132,14 @@ export const ipcAPI = {
     backup: {
         export: (): Promise<{ success: boolean, path?: string }> => ipcRenderer.invoke('backup:export'),
         import: (): Promise<{ success: boolean }> => ipcRenderer.invoke('backup:import'),
+        exportEncrypted: (password: string): Promise<{ success: boolean, path?: string, error?: string }> =>
+            ipcRenderer.invoke('backup:export-encrypted', password),
+        importEncrypted: (password: string): Promise<{ success: boolean, error?: string }> =>
+            ipcRenderer.invoke('backup:import-encrypted', password),
+        validatePassword: (password: string): Promise<{ valid: boolean, error?: string }> =>
+            ipcRenderer.invoke('backup:validate-password', password),
+        passwordStrength: (password: string): Promise<number> =>
+            ipcRenderer.invoke('backup:password-strength', password),
     },
 
     // Colorado Tax
@@ -127,6 +157,7 @@ export const ipcAPI = {
     system: {
         promptSaveFile: (defaultName: string, data: Uint8Array): Promise<{ success: boolean; path?: string }> =>
             ipcRenderer.invoke('system:promptSaveFile', defaultName, data),
+        on: (channel: string, callback: (event: any, ...args: any[]) => void) => ipcRenderer.on(channel, callback),
     },
     // Stripe
     stripe: {

@@ -5,6 +5,8 @@ import { Employer, TaxConfiguration } from '../../types';
 import AuditLog from './AuditLog';
 import SuccessModal from './SuccessModal';
 import TaxConfigurationSettings from './TaxConfigurationSettings';
+import { ExportBackupDialog } from './ExportBackupDialog';
+import { ImportBackupDialog } from './ImportBackupDialog';
 
 const Settings: React.FC = () => {
     const [employer, setEmployer] = useState<Employer | null>(null);
@@ -47,6 +49,8 @@ const Settings: React.FC = () => {
     });
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showExportDialog, setShowExportDialog] = useState(false);
+    const [showImportDialog, setShowImportDialog] = useState(false);
 
     // Tax Configuration State
     const [taxConfigs, setTaxConfigs] = useState<TaxConfiguration[]>([]);
@@ -73,6 +77,17 @@ const Settings: React.FC = () => {
             loadTaxConfigForYear(selectedTaxYear);
         }
     }, [selectedTaxYear, taxConfigs]);
+
+    // Listen for macOS menu bar events
+    useEffect(() => {
+        const removeExport = ipcAPI.system.on('trigger-backup-export', () => setShowExportDialog(true));
+        const removeImport = ipcAPI.system.on('trigger-backup-import', () => setShowImportDialog(true));
+
+        return () => {
+            removeExport();
+            removeImport();
+        };
+    }, []);
 
     const loadEmployer = async () => {
         try {
@@ -958,6 +973,24 @@ const Settings: React.FC = () => {
                 <p className="section-description">
                     Export your database for safekeeping or restore from a previous backup.
                 </p>
+
+                <h4 style={{ marginTop: '20px', marginBottom: '10px' }}>🔐 Encrypted Backups (Recommended)</h4>
+                <p style={{ fontSize: '13px', color: '#666', marginBottom: '12px' }}>
+                    Password-protected backups that can be restored on any computer. Perfect for disaster recovery.
+                </p>
+                <div className="export-actions" style={{ marginBottom: '24px' }}>
+                    <button className="btn-primary" onClick={() => setShowExportDialog(true)}>
+                        🔐 Export Encrypted Backup
+                    </button>
+                    <button className="btn-secondary" onClick={() => setShowImportDialog(true)}>
+                        📂 Import Encrypted Backup
+                    </button>
+                </div>
+
+                <h4 style={{ marginTop: '20px', marginBottom: '10px' }}>💾 Quick Backups (Local Only)</h4>
+                <p style={{ fontSize: '13px', color: '#666', marginBottom: '12px' }}>
+                    Simple database backups for local use. Cannot be restored on a different computer.
+                </p>
                 <div className="export-actions">
                     <button className="btn-secondary" onClick={handleExport}>
                         💾 Backup Database
@@ -975,6 +1008,22 @@ const Settings: React.FC = () => {
                 title={successModal.title}
                 message={successModal.message}
                 onClose={() => setSuccessModal({ ...successModal, open: false })}
+            />
+            <ExportBackupDialog
+                isOpen={showExportDialog}
+                onClose={() => setShowExportDialog(false)}
+            />
+            <ImportBackupDialog
+                isOpen={showImportDialog}
+                onClose={() => setShowImportDialog(false)}
+                onSuccess={() => {
+                    setSuccessModal({
+                        open: true,
+                        title: 'Database Restored',
+                        message: 'Database restored successfully.\n\nThe application will now reload to apply changes.'
+                    });
+                    setTimeout(() => window.location.reload(), 3000);
+                }}
             />
         </div >
     );

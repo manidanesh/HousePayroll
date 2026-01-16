@@ -1,0 +1,239 @@
+/* Dialog Overlay */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Dialog Content */
+.dialog-content {
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.dialog-content h2 {
+    margin: 0 0 16px 0;
+    font-size: 24px;
+    color: #1f2937;
+}
+
+.dialog-description {
+    color: #6b7280;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+/* Dialog Body */
+.dialog-body {
+    margin-bottom: 24px;
+}
+
+/* Form Groups */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-group input:disabled {
+    background-color: #f3f4f6;
+    cursor: not-allowed;
+}
+
+/* Password Input Wrapper */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    padding-right: 40px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px 8px;
+}
+
+.password-toggle:hover {
+    opacity: 0.7;
+}
+
+/* Password Strength */
+.password-strength {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.strength-bar {
+    flex: 1;
+    height: 6px;
+    background-color: #e5e7eb;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.strength-fill {
+    height: 100%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.password-strength span {
+    font-size: 12px;
+    font-weight: 500;
+    min-width: 60px;
+}
+
+/* Info Boxes */
+.info-box {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 16px;
+}
+
+.info-box strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #1e40af;
+}
+
+.info-box ul {
+    margin: 0;
+    padding-left: 20px;
+    color: #1e3a8a;
+}
+
+.info-box li {
+    margin-bottom: 4px;
+}
+
+/* Warning Box */
+.warning-box {
+    background-color: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.warning-box strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #92400e;
+}
+
+.warning-box p {
+    margin: 0;
+    color: #78350f;
+}
+
+/* Error Box */
+.error-box {
+    background-color: #fee2e2;
+    border: 1px solid #fca5a5;
+    border-radius: 6px;
+    padding: 12px;
+    color: #991b1b;
+    margin-top: 16px;
+}
+
+.error-text {
+    color: #dc2626;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+/* Export Path */
+.export-path {
+    background-color: #f3f4f6;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+    word-break: break-all;
+    margin: 12px 0;
+}
+
+/* Dialog Actions */
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background-color: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #2563eb;
+}
+
+.btn-secondary {
+    background-color: #e5e7eb;
+    color: #374151;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: #d1d5db;
+}

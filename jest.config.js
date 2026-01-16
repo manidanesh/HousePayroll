@@ -20,6 +20,7 @@ module.exports = {
     },
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
+        '^electron$': '<rootDir>/src/tests/__mocks__/electron.ts'
     },
     setupFilesAfterEnv: ['<rootDir>/src/tests/setup.ts'],
 };

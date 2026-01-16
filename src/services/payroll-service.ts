@@ -3,6 +3,7 @@
  */
 
 import { getDatabase } from '../database/db';
+import { BaseRepository } from '../core/base-repository';
 import { EnhancedPayrollResult } from '../core/enhanced-payroll-calculator';
 import { AuditService } from './audit-service';
 import { TimeEntryService } from './time-entry-service';
@@ -20,12 +21,12 @@ export interface PayrollRecord {
     regular_hours?: number;
     weekend_hours?: number;
     holiday_hours?: number;
-    overtime_hours?: number; // Added
+    overtime_hours?: number;
     grossWages: number;
     regular_wages?: number;
     weekend_wages?: number;
     holiday_wages?: number;
-    overtime_wages?: number; // Added
+    overtime_wages?: number;
     ssEmployee: number;
     medicareEmployee: number;
     federalWithholding: number;
@@ -34,14 +35,15 @@ export interface PayrollRecord {
     medicareEmployer: number;
     futa: number;
     colorado_suta?: number;
-    colorado_famli_employee?: number; // Added
-    colorado_famli_employer?: number; // Added
+    colorado_famli_employee?: number;
+    colorado_famli_employer?: number;
     employerSuiRate?: number;
     employerSuiPaid?: number;
     calculationVersion: string;
     taxVersion: string;
     isFinalized: boolean;
     isMinimumWageCompliant?: boolean;
+    status?: 'draft' | 'approved';
     checkNumber?: string;
     checkBankName?: string;
     checkAccountOwner?: string;
@@ -54,19 +56,89 @@ export interface PayrollRecord {
     createdAt: string;
 }
 
-export class PayrollService {
-    /**
-     * Create a new payroll record from calculator results
-     */
+export class PayrollService extends BaseRepository<PayrollRecord> {
+
+    // Abstract implementation dummy
+    create(data: Partial<PayrollRecord>): PayrollRecord { throw new Error('Use createPayrollRecord'); }
+    update(id: number, data: Partial<PayrollRecord>): PayrollRecord { throw new Error('Method not implemented.'); }
+    delete(id: number): void { throw new Error('Method not implemented.'); }
+    getById(id: number): PayrollRecord | null { return this.getPayrollRecordById(id); }
+
+    // Static Compatibility Layer
     static createPayrollRecord(result: EnhancedPayrollResult, payPeriodStart: string, payPeriodEnd: string): PayrollRecord {
-        const db = getDatabase();
+        return new PayrollService(getDatabase()).createPayrollRecord(result, payPeriodStart, payPeriodEnd);
+    }
+
+    static getPayrollRecordById(id: number): PayrollRecord | null {
+        return new PayrollService(getDatabase()).getPayrollRecordById(id);
+    }
+
+    static getYTDGrossWages(caregiverId: number, year: number): number {
+        return YTDService.getYTDGrossWages(caregiverId, year);
+    }
+
+    static voidPayrollRecord(id: number, reason: string): void {
+        new PayrollService(getDatabase()).voidPayrollRecord(id, reason);
+    }
+
+    static checkDuplicateCheckNumber(checkNumber: string, employerId: number, excludeRecordId?: number): boolean {
+        return new PayrollService(getDatabase()).checkDuplicateCheckNumber(checkNumber, employerId, excludeRecordId);
+    }
+
+    static finalizePayroll(id: number, checkNumber: string, paymentDate: string, pdfData?: Uint8Array, isLatePayment: boolean = false, paymentMethod?: string, checkBankName?: string, checkAccountOwner?: string): void {
+        new PayrollService(getDatabase()).finalizePayroll(id, checkNumber, paymentDate, pdfData, isLatePayment, paymentMethod, checkBankName, checkAccountOwner);
+    }
+
+    static getPaystubContext(recordId: number): { record: PayrollRecord, ytd: any } | null {
+        return new PayrollService(getDatabase()).getPaystubContext(recordId);
+    }
+
+    static getYTDContext(caregiverId: number, year: number): any {
+        return YTDService.getYTDContext(caregiverId, year);
+    }
+
+    static getPayrollHistory(): PayrollRecord[] {
+        return new PayrollService(getDatabase()).getPayrollHistory();
+    }
+
+    static getLastFinalizedDate(caregiverId: number): string | null {
+        return new PayrollService(getDatabase()).getLastFinalizedDate(caregiverId);
+    }
+
+    static checkOverlappingPayrolls(caregiverId: number, startDate: string, endDate: string): any[] {
+        return new PayrollService(getDatabase()).checkOverlappingPayrolls(caregiverId, startDate, endDate);
+    }
+
+    static previewPayroll(result: EnhancedPayrollResult): EnhancedPayrollResult {
+        return result;
+    }
+
+    static saveDraft(result: EnhancedPayrollResult, periodStart: string, periodEnd: string): PayrollRecord {
+        return new PayrollService(getDatabase()).saveDraft(result, periodStart, periodEnd);
+    }
+
+    static approveDraft(draftId: number): PayrollRecord {
+        return new PayrollService(getDatabase()).approveDraft(draftId);
+    }
+
+    static deleteDraft(draftId: number): void {
+        new PayrollService(getDatabase()).deleteDraft(draftId);
+    }
+
+    static getDrafts(): PayrollRecord[] {
+        return new PayrollService(getDatabase()).getDrafts();
+    }
+
+    // Instance Methods
+
+    createPayrollRecord(result: EnhancedPayrollResult, payPeriodStart: string, payPeriodEnd: string): PayrollRecord {
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No active employer profile found');
 
         const caregiver = CaregiverService.getCaregiverById(result.caregiverId);
         const i9Snapshot = caregiver?.i9Completed ? 1 : 0;
 
-        const res = db.prepare(`
+        const res = this.run(`
             INSERT INTO payroll_records (
                 caregiver_id, employer_id, pay_period_start, pay_period_end, total_hours, 
                 regular_hours, weekend_hours, holiday_hours, overtime_hours,
@@ -79,7 +151,7 @@ export class PayrollService {
                 calculation_version, tax_version,
                 is_finalized, is_minimum_wage_compliant, i9_snapshot
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-        `).run(
+        `, [
             result.caregiverId,
             employer.id,
             payPeriodStart,
@@ -111,11 +183,10 @@ export class PayrollService {
             result.taxVersion,
             result.isMinimumWageCompliant ? 1 : 0,
             i9Snapshot
-        );
+        ]);
 
         const record = this.getPayrollRecordById(res.lastInsertRowid as number)!;
 
-        // Log audit
         AuditService.log({
             tableName: 'payroll_records',
             recordId: record.id,
@@ -131,15 +202,11 @@ export class PayrollService {
         return record;
     }
 
-    /**
-     * Get payroll record by ID
-     */
-    static getPayrollRecordById(id: number): PayrollRecord | null {
-        const db = getDatabase();
+    getPayrollRecordById(id: number): PayrollRecord | null {
         const employer = EmployerService.getEmployer();
         if (!employer) return null;
 
-        const row = db.prepare('SELECT * FROM payroll_records WHERE id = ? AND employer_id = ?').get(id, employer.id) as any;
+        const row = this.get<any>('SELECT * FROM payroll_records WHERE id = ? AND employer_id = ?', [id, employer.id]);
 
         if (!row) return null;
 
@@ -180,32 +247,16 @@ export class PayrollService {
         };
     }
 
-    /**
-     * Get YTD Gross Wages for a caregiver
-     * @deprecated Use YTDService.getYTDGrossWages() instead
-     */
-    static getYTDGrossWages(caregiverId: number, year: number): number {
-        return YTDService.getYTDGrossWages(caregiverId, year);
-    }
-
-    /**
-     * Void a payroll record
-     */
-    static voidPayrollRecord(id: number, reason: string): void {
-        const db = getDatabase();
+    voidPayrollRecord(id: number, reason: string): void {
         const employer = EmployerService.getEmployer();
         if (!employer) return;
 
-        db.prepare(`
+        this.run(`
             UPDATE payroll_records
             SET is_voided = 1, void_reason = ?
             WHERE id = ? AND employer_id = ?
-        `).run(reason, id, employer.id);
+        `, [reason, id, employer.id]);
 
-        // Fetch record to log audit properly
-        const record = this.getPayrollRecordById(id);
-
-        // Log audit
         AuditService.log({
             tableName: 'payroll_records',
             recordId: id,
@@ -214,20 +265,7 @@ export class PayrollService {
         });
     }
 
-    /**
-     * Check if a check number is already in use
-     * @param checkNumber - The check number to validate
-     * @param employerId - The employer ID
-     * @param excludeRecordId - Optional record ID to exclude from check (for updates)
-     * @returns true if duplicate exists, false otherwise
-     */
-    static checkDuplicateCheckNumber(
-        checkNumber: string,
-        employerId: number,
-        excludeRecordId?: number
-    ): boolean {
-        const db = getDatabase();
-
+    checkDuplicateCheckNumber(checkNumber: string, employerId: number, excludeRecordId?: number): boolean {
         const query = excludeRecordId
             ? `SELECT id FROM payroll_records 
                WHERE check_number = ? AND employer_id = ? AND id != ?`
@@ -238,26 +276,18 @@ export class PayrollService {
             ? [checkNumber, employerId, excludeRecordId]
             : [checkNumber, employerId];
 
-        const row = db.prepare(query).get(...params);
-        return !!row; // Returns true if duplicate exists
+        const row = this.get<any>(query, params);
+        return !!row;
     }
 
-    /**
-     * Finalize payroll (Mark as Paid)
-     * Once finalized, records are immutable
-     */
-    static finalizePayroll(id: number, checkNumber: string, paymentDate: string, pdfData?: Uint8Array, isLatePayment: boolean = false, paymentMethod?: string, checkBankName?: string, checkAccountOwner?: string): void {
-        const db = getDatabase();
-
+    finalizePayroll(id: number, checkNumber: string, paymentDate: string, pdfData?: Uint8Array, isLatePayment: boolean = false, paymentMethod?: string, checkBankName?: string, checkAccountOwner?: string): void {
         const record = this.getPayrollRecordById(id);
         if (!record) throw new Error('Payroll record not found');
 
-        // Enforce immutability: Prevent modification of finalized records
         if (record.isFinalized) {
             throw new Error('Cannot modify finalized payroll record. Payroll has already been finalized and is immutable.');
         }
 
-        // Check for duplicate check number
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No employer found');
 
@@ -271,51 +301,42 @@ export class PayrollService {
             throw new Error(`Check number "${checkNumber}" is already in use. Please enter a different check number.`);
         }
 
-        // 1. Mark payroll record as finalized with optional PDF blob
         if (pdfData) {
-            db.prepare(`
+            this.run(`
                 UPDATE payroll_records
                 SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, paystub_pdf = ?, is_late_payment = ?
                 WHERE id = ? AND employer_id = ?
-            `).run(checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, Buffer.from(pdfData), isLatePayment ? 1 : 0, id, record.employerId || 0);
+            `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, Buffer.from(pdfData), isLatePayment ? 1 : 0, id, record.employerId || 0]);
         } else {
-            db.prepare(`
+            this.run(`
                 UPDATE payroll_records
                 SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, is_late_payment = ?
                 WHERE id = ? AND employer_id = ?
-            `).run(checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, isLatePayment ? 1 : 0, id, record.employerId || 0);
+            `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, isLatePayment ? 1 : 0, id, record.employerId || 0]);
         }
 
-        // 2. Mark associated time entries as finalized
         TimeEntryService.finalizeTimeEntries(record.caregiverId, record.payPeriodStart, record.payPeriodEnd);
 
-        // 3. Calculate and apply HFWA accrual (Colorado: 1h per 30h worked, capped at 48h/year)
         const accruedHours = record.totalHours / 30;
-
-        // Update caregiver's HFWA balance with a 48h annual cap check
-        // Calculate total accrued this year already
         const yearStart = `${record.payPeriodEnd.substring(0, 4)}-01-01`;
         const yearEnd = `${record.payPeriodEnd.substring(0, 4)}-12-31`;
 
-        const row = db.prepare(`
+        const row = this.get<{ total: number }>(`
             SELECT SUM(total_hours) / 30.0 as total 
             FROM payroll_records 
             WHERE caregiver_id = ? AND is_finalized = 1 AND is_voided = 0 
             AND pay_period_end BETWEEN ? AND ?
-        `).get(record.caregiverId, yearStart, yearEnd) as { total: number } | undefined;
+        `, [record.caregiverId, yearStart, yearEnd]);
 
         const currentYearAccrual = row?.total || 0;
-
         const HFWA_ANNUAL_CAP = 48;
         const remainingCap = Math.max(0, HFWA_ANNUAL_CAP - currentYearAccrual);
         const actualAccrual = Math.min(accruedHours, remainingCap);
 
         if (actualAccrual > 0) {
-            db.prepare('UPDATE caregivers SET hfwa_balance = hfwa_balance + ? WHERE id = ?')
-                .run(actualAccrual, record.caregiverId);
+            this.run('UPDATE caregivers SET hfwa_balance = hfwa_balance + ? WHERE id = ?', [actualAccrual, record.caregiverId]);
         }
 
-        // 4. Log audit
         AuditService.log({
             tableName: 'payroll_records',
             recordId: id,
@@ -325,10 +346,7 @@ export class PayrollService {
         });
     }
 
-    /**
-     * Get Paystub Context with comprehensive YTD data for a specific record
-     */
-    static getPaystubContext(recordId: number): { record: PayrollRecord, ytd: any } | null {
+    getPaystubContext(recordId: number): { record: PayrollRecord, ytd: any } | null {
         const record = this.getPayrollRecordById(recordId);
         if (!record) return null;
 
@@ -341,29 +359,18 @@ export class PayrollService {
 
         return { record, ytd };
     }
-    /**
-     * Get YTD Context for data prior to current calculation (for UI preview)
-     * @deprecated Use YTDService.getYTDContext() instead
-     */
-    static getYTDContext(caregiverId: number, year: number): any {
-        return YTDService.getYTDContext(caregiverId, year);
-    }
 
-    /**
-     * Get Payroll History (Finalized Records)
-     */
-    static getPayrollHistory(): PayrollRecord[] {
-        const db = getDatabase();
+    getPayrollHistory(): PayrollRecord[] {
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
-        const rows = db.prepare(`
+        const rows = this.all<any>(`
             SELECT pr.*, c.full_legal_name as caregiver_name 
             FROM payroll_records pr
             JOIN caregivers c ON pr.caregiver_id = c.id
             WHERE pr.employer_id = ? AND pr.is_finalized = 1 
             ORDER BY pr.payment_date DESC, pr.id DESC
-        `).all(employer.id) as any[];
+        `, [employer.id]);
 
         return rows.map(row => ({
             id: row.id,
@@ -403,33 +410,24 @@ export class PayrollService {
         }));
     }
 
-    /**
-     * Get the last finalized pay period end date for a caregiver
-     */
-    static getLastFinalizedDate(caregiverId: number): string | null {
-        const db = getDatabase();
+    getLastFinalizedDate(caregiverId: number): string | null {
         const employer = EmployerService.getEmployer();
         if (!employer) return null;
 
-        const result = db.prepare(`
+        const result = this.get<{ last_date: string }>(`
             SELECT MAX(pay_period_end) as last_date 
             FROM payroll_records 
             WHERE caregiver_id = ? AND employer_id = ? AND is_finalized = 1 AND is_voided = 0
-        `).get(caregiverId, employer.id) as { last_date: string };
+        `, [caregiverId, employer.id]);
 
-        return result.last_date || null;
+        return result?.last_date || null;
     }
 
-    /**
-     * Check if a date range overlaps with any finalized payroll periods
-     * Returns array of overlapping payroll records
-     */
-    static checkOverlappingPayrolls(caregiverId: number, startDate: string, endDate: string): any[] {
-        const db = getDatabase();
+    checkOverlappingPayrolls(caregiverId: number, startDate: string, endDate: string): any[] {
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
-        const overlapping = db.prepare(`
+        return this.all<any>(`
             SELECT id, pay_period_start, pay_period_end, check_number, payment_date
             FROM payroll_records
             WHERE caregiver_id = ? 
@@ -437,37 +435,17 @@ export class PayrollService {
               AND is_finalized = 1 
               AND is_voided = 0
               AND (
-                -- New period starts during existing period
                 (? BETWEEN pay_period_start AND pay_period_end)
                 OR
-                -- New period ends during existing period
                 (? BETWEEN pay_period_start AND pay_period_end)
                 OR
-                -- New period completely contains existing period
                 (? <= pay_period_start AND ? >= pay_period_end)
               )
             ORDER BY pay_period_start
-        `).all(caregiverId, employer.id, startDate, endDate, startDate, endDate) as any[];
-
-        return overlapping;
+        `, [caregiverId, employer.id, startDate, endDate, startDate, endDate]);
     }
 
-    /**
-     * Preview payroll calculation without saving to database
-     * Used for review workflow - calculate and display details before approval
-     */
-    static previewPayroll(result: EnhancedPayrollResult): EnhancedPayrollResult {
-        // Simply return the calculation result for preview
-        // No database operations
-        return result;
-    }
-
-    /**
-     * Save payroll as draft (status = 'draft')
-     * Allows saving calculation for later approval
-     */
-    static saveDraft(result: EnhancedPayrollResult, periodStart: string, periodEnd: string): PayrollRecord {
-        const db = getDatabase();
+    saveDraft(result: EnhancedPayrollResult, periodStart: string, periodEnd: string): PayrollRecord {
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No employer found');
 
@@ -476,7 +454,7 @@ export class PayrollService {
 
         const i9Snapshot = caregiver.i9CompletionDate ? 1 : 0;
 
-        const res = db.prepare(`
+        const res = this.run(`
             INSERT INTO payroll_records (
                 caregiver_id, employer_id, pay_period_start, pay_period_end,
                 total_hours, regular_hours, weekend_hours, holiday_hours, overtime_hours,
@@ -488,7 +466,7 @@ export class PayrollService {
                 calculation_version, tax_version, is_minimum_wage_compliant, i9_snapshot,
                 status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
-        `).run(
+        `, [
             result.caregiverId,
             employer.id,
             periodStart,
@@ -520,7 +498,7 @@ export class PayrollService {
             result.taxVersion,
             result.isMinimumWageCompliant ? 1 : 0,
             i9Snapshot
-        );
+        ]);
 
         const record = this.getPayrollRecordById(res.lastInsertRowid as number)!;
 
@@ -535,37 +513,24 @@ export class PayrollService {
         return record;
     }
 
-    /**
-     * Approve draft payroll - change status from 'draft' to 'approved'
-     * Finalizes time entries and marks payroll as approved
-     */
-    static approveDraft(draftId: number): PayrollRecord {
-        const db = getDatabase();
+    approveDraft(draftId: number): PayrollRecord {
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No employer found');
 
-        // Get draft record
         const draft = this.getPayrollRecordById(draftId);
         if (!draft) throw new Error('Draft payroll not found');
 
-        // Verify it's actually a draft
-        const row = db.prepare('SELECT status FROM payroll_records WHERE id = ? AND employer_id = ?')
-            .get(draftId, employer.id) as { status: string } | undefined;
+        const row = this.get<{ status: string }>('SELECT status FROM payroll_records WHERE id = ? AND employer_id = ?', [draftId, employer.id]);
 
         if (!row || row.status !== 'draft') {
             throw new Error('Payroll is not in draft status');
         }
 
-        // Update status to approved
-        db.prepare('UPDATE payroll_records SET status = \'approved\' WHERE id = ? AND employer_id = ?')
-            .run(draftId, employer.id);
+        this.run("UPDATE payroll_records SET status = 'approved' WHERE id = ? AND employer_id = ?", [draftId, employer.id]);
 
-        // Finalize time entries for this period
         const entries = TimeEntryService.getTimeEntriesForDateRange(draft.payPeriodStart, draft.payPeriodEnd);
         entries.filter((e: any) => e.caregiverId === draft.caregiverId).forEach((entry: any) => {
-            // Mark entry as finalized by updating it
-            const db = getDatabase();
-            db.prepare('UPDATE time_entries SET is_finalized = 1 WHERE id = ?').run(entry.id);
+            this.run('UPDATE time_entries SET is_finalized = 1 WHERE id = ?', [entry.id]);
         });
 
         AuditService.log({
@@ -579,27 +544,18 @@ export class PayrollService {
         return this.getPayrollRecordById(draftId)!;
     }
 
-    /**
-     * Delete draft payroll
-     * Only drafts can be deleted, approved payrolls must be voided
-     */
-    static deleteDraft(draftId: number): void {
-        const db = getDatabase();
+    deleteDraft(draftId: number): void {
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No employer found');
 
-        // Verify it's a draft
-        const row = db.prepare('SELECT status FROM payroll_records WHERE id = ? AND employer_id = ?')
-            .get(draftId, employer.id) as { status: string } | undefined;
+        const row = this.get<{ status: string }>('SELECT status FROM payroll_records WHERE id = ? AND employer_id = ?', [draftId, employer.id]);
 
         if (!row) throw new Error('Payroll not found');
         if (row.status !== 'draft') {
             throw new Error('Only draft payrolls can be deleted. Use void for approved payrolls.');
         }
 
-        // Delete the draft
-        db.prepare('DELETE FROM payroll_records WHERE id = ? AND employer_id = ?')
-            .run(draftId, employer.id);
+        this.run('DELETE FROM payroll_records WHERE id = ? AND employer_id = ?', [draftId, employer.id]);
 
         AuditService.log({
             tableName: 'payroll_records',
@@ -610,21 +566,17 @@ export class PayrollService {
         });
     }
 
-    /**
-     * Get all draft payrolls
-     */
-    static getDrafts(): PayrollRecord[] {
-        const db = getDatabase();
+    getDrafts(): PayrollRecord[] {
         const employer = EmployerService.getEmployer();
         if (!employer) return [];
 
-        const rows = db.prepare(`
+        const rows = this.all<any>(`
             SELECT * FROM payroll_records 
-            WHERE employer_id = ? AND status = 'draft'
+            WHERE employer_id = ? AND status IN ('draft', 'approved') AND is_finalized = 0
             ORDER BY created_at DESC
-        `).all(employer.id) as any[];
+        `, [employer.id]);
 
-        return rows.map(row => ({
+        const mapped = rows.map(row => ({
             id: row.id,
             caregiverId: row.caregiver_id,
             employerId: row.employer_id,
@@ -642,6 +594,7 @@ export class PayrollService {
             calculationVersion: row.calculation_version,
             taxVersion: row.tax_version,
             isFinalized: row.is_finalized === 1,
+            status: row.status,
             regular_hours: row.regular_hours,
             weekend_hours: row.weekend_hours,
             holiday_hours: row.holiday_hours,
@@ -655,5 +608,31 @@ export class PayrollService {
             colorado_famli_employer: row.colorado_famli_employer,
             createdAt: row.created_at,
         }));
+
+        // Deduplicate: if there's both draft and approved for the same period/caregiver,
+        // only show the approved one
+        const deduplicated: PayrollRecord[] = [];
+        const seen = new Map<string, PayrollRecord>();
+
+        for (const record of mapped) {
+            const key = `${record.caregiverId}-${record.payPeriodStart}-${record.payPeriodEnd}`;
+            const existing = seen.get(key);
+
+            if (!existing) {
+                seen.set(key, record);
+                deduplicated.push(record);
+            } else {
+                // If we already have a record for this period, prefer approved over draft
+                if (record.status === 'approved' && existing.status === 'draft') {
+                    // Replace draft with approved
+                    const index = deduplicated.indexOf(existing);
+                    deduplicated[index] = record;
+                    seen.set(key, record);
+                }
+                // Otherwise keep the existing one (either both are same status, or existing is already approved)
+            }
+        }
+
+        return deduplicated;
     }
 }
