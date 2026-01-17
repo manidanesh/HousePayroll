@@ -222,8 +222,11 @@ describe('TaxComputer', () => {
             expectCurrencyEqual(result.coloradoFamliEmployee, 9.00);
             expectCurrencyEqual(result.coloradoFamliEmployer, 9.00);
 
+            // Colorado State Income Tax: 2000 * 0.044 = 88.00
+            expectCurrencyEqual(result.coloradoStateIncomeTax, 88.00);
+
             // Totals
-            const expectedEmployeeTotal = 124 + 29 + 9; // 162.00
+            const expectedEmployeeTotal = 124 + 29 + 9 + 88; // 250.00
             const expectedEmployerTotal = 124 + 29 + 0 + 34 + 9; // 196.00
             expectCurrencyEqual(result.totalEmployeeWithholdings, expectedEmployeeTotal);
             expectCurrencyEqual(result.totalEmployerTaxes, expectedEmployerTotal);

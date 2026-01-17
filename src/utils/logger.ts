@@ -190,4 +190,8 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Clean old logs on startup
-logger.cleanOldLogs();
+try {
+    logger.cleanOldLogs();
+} catch (e) {
+    // Ignore errors during cleanup to prevent startup crash (especially in tests)
+}

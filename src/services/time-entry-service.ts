@@ -76,40 +76,47 @@ export class TimeEntryService extends BaseRepository<TimeEntry> {
         workDate: string;
         hoursWorked: number;
     }): TimeEntry {
+        const db = getDatabase();
+
+        // 1. Validator: Explicitly check all inputs
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('No active employer profile found');
 
-        // Validate hours
         if (data.hoursWorked < 0) {
             throw new Error('Hours worked cannot be negative');
         }
 
-        // Check if entry already exists for this caregiver and date
-        const existing = this.get<{ id: number }>(`
-            SELECT id FROM time_entries 
-            WHERE caregiver_id = ? AND work_date = ? AND employer_id = ?
-        `, [data.caregiverId, data.workDate, employer.id]);
+        // 2. Transaction: Atomic State Change (Write + Audit)
+        const createTransaction = db.transaction(() => {
+            // Check if entry already exists for this caregiver and date
+            const existing = this.get<{ id: number }>(`
+                SELECT id FROM time_entries 
+                WHERE caregiver_id = ? AND work_date = ? AND employer_id = ?
+            `, [data.caregiverId, data.workDate, employer.id]);
 
-        if (existing) {
-            return this.updateTimeEntry(existing.id, data.hoursWorked);
-        }
+            if (existing) {
+                return this.updateTimeEntry(existing.id, data.hoursWorked);
+            }
 
-        const result = this.run(`
-            INSERT INTO time_entries (caregiver_id, work_date, hours_worked, employer_id)
-            VALUES (?, ?, ?, ?)
-        `, [data.caregiverId, data.workDate, data.hoursWorked, employer.id]);
+            const result = this.run(`
+                INSERT INTO time_entries (caregiver_id, work_date, hours_worked, employer_id)
+                VALUES (?, ?, ?, ?)
+            `, [data.caregiverId, data.workDate, data.hoursWorked, employer.id]);
 
-        const entry = this.getTimeEntryById(result.lastInsertRowid as number)!;
+            const newEntry = this.getTimeEntryById(result.lastInsertRowid as number);
+            if (!newEntry) throw new Error('Failed to create time entry');
 
-        // Log audit
-        AuditService.log({
-            tableName: 'time_entries',
-            recordId: entry.id,
-            action: 'CREATE',
-            changesJson: JSON.stringify(data)
+            AuditService.log({
+                tableName: 'time_entries',
+                recordId: newEntry.id,
+                action: 'CREATE',
+                changesJson: JSON.stringify(data)
+            });
+
+            return newEntry;
         });
 
-        return entry;
+        return createTransaction();
     }
 
     /**
@@ -224,7 +231,13 @@ export class TimeEntryService extends BaseRepository<TimeEntry> {
      * Update time entry
      */
     updateTimeEntry(id: number, hoursWorked: number): TimeEntry {
-        // Check if entry is finalized
+        const db = getDatabase();
+
+        // 1. Validator: Explicitly check all inputs and state
+        if (hoursWorked < 0) {
+            throw new Error('Hours worked cannot be negative');
+        }
+
         const entry = this.getTimeEntryById(id);
         if (!entry) {
             throw new Error('Time entry not found');
@@ -234,34 +247,36 @@ export class TimeEntryService extends BaseRepository<TimeEntry> {
             throw new Error('Cannot update finalized time entry');
         }
 
-        if (hoursWorked < 0) {
-            throw new Error('Hours worked cannot be negative');
-        }
+        // 2. Transaction: Atomic State Change (Write + Audit)
+        const updateTransaction = db.transaction(() => {
+            this.run(`
+                UPDATE time_entries
+                SET hours_worked = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `, [hoursWorked, id]);
 
-        this.run(`
-            UPDATE time_entries 
-            SET hours_worked = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-        `, [hoursWorked, id]);
+            const updatedEntry = this.getTimeEntryById(id)!;
 
-        const updatedEntry = this.getTimeEntryById(id)!;
+            AuditService.log({
+                tableName: 'time_entries',
+                recordId: id,
+                action: 'UPDATE',
+                changesJson: JSON.stringify({ hoursWorked })
+            });
 
-        // Log audit
-        AuditService.log({
-            tableName: 'time_entries',
-            recordId: id,
-            action: 'UPDATE',
-            changesJson: JSON.stringify({ hoursWorked })
+            return updatedEntry;
         });
 
-        return updatedEntry;
+        return updateTransaction();
     }
 
     /**
      * Delete time entry
      */
     deleteTimeEntry(id: number): void {
-        // Check if entry is finalized
+        const db = getDatabase();
+
+        // 1. Validator: Explicitly check state
         const entry = this.getTimeEntryById(id);
         if (!entry) {
             throw new Error('Time entry not found');
@@ -271,15 +286,19 @@ export class TimeEntryService extends BaseRepository<TimeEntry> {
             throw new Error('Cannot delete finalized time entry');
         }
 
-        this.run('DELETE FROM time_entries WHERE id = ?', [id]);
+        // 2. Transaction: Atomic State Change (Write + Audit)
+        const deleteTransaction = db.transaction(() => {
+            this.run('DELETE FROM time_entries WHERE id = ?', [id]);
 
-        // Log audit
-        AuditService.log({
-            tableName: 'time_entries',
-            recordId: id,
-            action: 'DELETE',
-            changesJson: JSON.stringify(entry)
+            AuditService.log({
+                tableName: 'time_entries',
+                recordId: id,
+                action: 'DELETE',
+                changesJson: JSON.stringify(entry)
+            });
         });
+
+        deleteTransaction();
     }
 
     /**

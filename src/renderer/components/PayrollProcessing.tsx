@@ -380,37 +380,39 @@ const PayrollProcessing: React.FC = () => {
                 uint8Array
             );
 
-            // Finalize payroll
-            await ipcAPI.payroll.finalize(
-                calculation.id,
-                checkNumber,
-                paymentDate,
-                uint8Array,
-                isLate,
-                paymentMethod,
-                checkBankName,
-                checkAccountOwner
-            );
-
             if (result.success) {
+                // Happy Path: PDF Saved -> Now Finalize State
+                await ipcAPI.payroll.finalize(
+                    calculation.id,
+                    checkNumber,
+                    paymentDate,
+                    uint8Array,
+                    isLate,
+                    paymentMethod,
+                    checkBankName,
+                    checkAccountOwner
+                );
+
                 setSuccessModal({
                     open: true,
                     title: 'Payroll Finalized!',
                     message: `Payroll has been finalized successfully.\n\nPDF saved to:\n${result.path}`
                 });
+
+                // Reset form only on success
+                setCalculation(null);
+                setCheckNumber('');
+                setStartDate('');
+                setEndDate('');
             } else {
+                // Deviation Path: User Cancelled -> No State Change
                 setSuccessModal({
                     open: true,
-                    title: 'Payroll Finalized!',
-                    message: `Payroll has been finalized successfully.\n\nNote: PDF was not saved (canceled by user).`
+                    title: 'Action Cancelled',
+                    message: `Paystub generation was cancelled.\n\nThe payroll record has NOT been finalized and remains in Draft mode.`
                 });
+                // Do NOT reset form, allowing user to try again
             }
-
-            // Reset form
-            setCalculation(null);
-            setCheckNumber('');
-            setStartDate('');
-            setEndDate('');
 
             // Trigger refresh of unpaid summary
             setSelectedCaregiverId(null);

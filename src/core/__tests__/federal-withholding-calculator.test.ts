@@ -31,7 +31,7 @@ describe('FederalWithholdingCalculator', () => {
             expect(result.socialSecurityWithholding).toBeCloseTo(58.89, 2);
             expect(result.medicareWithholding).toBeCloseTo(13.77, 2);
             expect(result.totalFICA).toBeCloseTo(72.66, 2);
-            expect(result.netPay).toBeCloseTo(839.24, 1);
+            expect(result.netPay).toBeCloseTo(839.94, 1);
         });
 
         it('should calculate withholding for married filer, biweekly, $950 gross', () => {

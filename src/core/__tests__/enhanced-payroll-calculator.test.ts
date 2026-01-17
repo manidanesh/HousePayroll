@@ -341,7 +341,9 @@ describe('EnhancedPayrollCalculator', () => {
                 result.taxes.socialSecurityEmployee -
                 result.taxes.medicareEmployee -
                 result.taxes.coloradoFamliEmployee -
+                result.taxes.coloradoStateIncomeTax -
                 result.federalWithholding;
+
 
             expectCurrencyEqual(result.netPay, expectedNet);
         });

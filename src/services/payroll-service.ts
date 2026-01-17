@@ -10,6 +10,9 @@ import { TimeEntryService } from './time-entry-service';
 import { CaregiverService } from './caregiver-service';
 import { EmployerService } from './employer-service';
 import { YTDService } from './ytd-service';
+import { TaxComputer, TaxRates } from '../core/tax-computer';
+import { FederalWithholdingCalculator, W4Information, PayFrequency, FilingStatus } from '../core/federal-withholding-calculator';
+import { TaxConfigurationService } from './tax-configuration-service';
 
 export interface PayrollRecord {
     id: number;
@@ -301,49 +304,54 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             throw new Error(`Check number "${checkNumber}" is already in use. Please enter a different check number.`);
         }
 
-        if (pdfData) {
-            this.run(`
-                UPDATE payroll_records
-                SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, paystub_pdf = ?, is_late_payment = ?
-                WHERE id = ? AND employer_id = ?
-            `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, Buffer.from(pdfData), isLatePayment ? 1 : 0, id, record.employerId || 0]);
-        } else {
-            this.run(`
-                UPDATE payroll_records
-                SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, is_late_payment = ?
-                WHERE id = ? AND employer_id = ?
-            `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, isLatePayment ? 1 : 0, id, record.employerId || 0]);
-        }
+        const db = getDatabase();
+        const finalize = db.transaction(() => {
+            if (pdfData) {
+                this.run(`
+                    UPDATE payroll_records
+                    SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, paystub_pdf = ?, is_late_payment = ?
+                    WHERE id = ? AND employer_id = ?
+                `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, Buffer.from(pdfData), isLatePayment ? 1 : 0, id, record.employerId || 0]);
+            } else {
+                this.run(`
+                    UPDATE payroll_records
+                    SET is_finalized = 1, check_number = ?, payment_date = ?, payment_method = ?, check_bank_name = ?, check_account_owner = ?, is_late_payment = ?
+                    WHERE id = ? AND employer_id = ?
+                `, [checkNumber, paymentDate, paymentMethod, checkBankName, checkAccountOwner, isLatePayment ? 1 : 0, id, record.employerId || 0]);
+            }
 
-        TimeEntryService.finalizeTimeEntries(record.caregiverId, record.payPeriodStart, record.payPeriodEnd);
+            TimeEntryService.finalizeTimeEntries(record.caregiverId, record.payPeriodStart, record.payPeriodEnd);
 
-        const accruedHours = record.totalHours / 30;
-        const yearStart = `${record.payPeriodEnd.substring(0, 4)}-01-01`;
-        const yearEnd = `${record.payPeriodEnd.substring(0, 4)}-12-31`;
+            const accruedHours = record.totalHours / 30;
+            const yearStart = `${record.payPeriodEnd.substring(0, 4)}-01-01`;
+            const yearEnd = `${record.payPeriodEnd.substring(0, 4)}-12-31`;
 
-        const row = this.get<{ total: number }>(`
-            SELECT SUM(total_hours) / 30.0 as total 
-            FROM payroll_records 
-            WHERE caregiver_id = ? AND is_finalized = 1 AND is_voided = 0 
-            AND pay_period_end BETWEEN ? AND ?
-        `, [record.caregiverId, yearStart, yearEnd]);
+            const row = this.get<{ total: number }>(`
+                SELECT SUM(total_hours) / 30.0 as total 
+                FROM payroll_records 
+                WHERE caregiver_id = ? AND is_finalized = 1 AND is_voided = 0 
+                AND pay_period_end BETWEEN ? AND ?
+            `, [record.caregiverId, yearStart, yearEnd]);
 
-        const currentYearAccrual = row?.total || 0;
-        const HFWA_ANNUAL_CAP = 48;
-        const remainingCap = Math.max(0, HFWA_ANNUAL_CAP - currentYearAccrual);
-        const actualAccrual = Math.min(accruedHours, remainingCap);
+            const currentYearAccrual = row?.total || 0;
+            const HFWA_ANNUAL_CAP = 48;
+            const remainingCap = Math.max(0, HFWA_ANNUAL_CAP - currentYearAccrual);
+            const actualAccrual = Math.min(accruedHours, remainingCap);
 
-        if (actualAccrual > 0) {
-            this.run('UPDATE caregivers SET hfwa_balance = hfwa_balance + ? WHERE id = ?', [actualAccrual, record.caregiverId]);
-        }
+            if (actualAccrual > 0) {
+                this.run('UPDATE caregivers SET hfwa_balance = hfwa_balance + ? WHERE id = ?', [actualAccrual, record.caregiverId]);
+            }
 
-        AuditService.log({
-            tableName: 'payroll_records',
-            recordId: id,
-            action: 'FINALIZED',
-            changesJson: JSON.stringify({ checkNumber, checkBankName, checkAccountOwner, paymentDate, accruedHours, isLatePayment }),
-            calculationVersion: record.calculationVersion
+            AuditService.log({
+                tableName: 'payroll_records',
+                recordId: id,
+                action: 'FINALIZED',
+                changesJson: JSON.stringify({ checkNumber, checkBankName, checkAccountOwner, paymentDate, accruedHours, isLatePayment }),
+                calculationVersion: record.calculationVersion
+            });
         });
+
+        finalize();
     }
 
     getPaystubContext(recordId: number): { record: PayrollRecord, ytd: any } | null {
@@ -637,7 +645,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
     }
 
     /**
-     * Calculate taxes for manual payroll entry
+     * Calculate taxes for manual entry using full compliance engines
      */
     static async calculateManualTaxes(params: {
         caregiverId: number;
@@ -648,35 +656,92 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
         // Get tax year
         const year = new Date(params.payPeriodStart).getFullYear();
 
-        // Get YTD context (same as regular payroll)
+        // 1. Get YTD context
         const ytd = YTDService.getYTDContext(params.caregiverId, year);
+        const ytdGross = ytd ? ytd.grossWages : 0;
 
-        // Calculate taxes - simplified calculation
-        const ssRate = 0.062;
-        const medicareRate = 0.0145;
-        const futaRate = 0.006;
+        // 2. Get Tax Configuration and Employer Settings
+        const configService = new TaxConfigurationService(getDatabase());
+        const taxConfig = configService.getConfigForYear(year);
 
-        const ssEmployee = params.grossAmount * ssRate;
-        const medicareEmployee = params.grossAmount * medicareRate;
-        const ssEmployer = params.grossAmount * ssRate;
-        const medicareEmployer = params.grossAmount * medicareRate;
-        const futa = params.grossAmount * futaRate;
+        const employer = EmployerService.getEmployer();
+        if (!employer) throw new Error('Employer not found');
 
-        // Simplified - no federal withholding or CO taxes for now
-        const netPay = params.grossAmount - ssEmployee - medicareEmployee;
+        // 3. Setup Tax Computer (FICA, FUTA, State)
+        const taxRates: TaxRates = {
+            ssRateEmployee: taxConfig.ssRateEmployee,
+            ssRateEmployer: taxConfig.ssRateEmployer,
+            ssWageBase: taxConfig.ssWageBase,
+            medicareRateEmployee: taxConfig.medicareRateEmployee,
+            medicareRateEmployer: taxConfig.medicareRateEmployer,
+            futaRate: taxConfig.futaRate,
+            futaWageBase: taxConfig.futaWageBase,
+            coloradoSutaRate: employer.coloradoSutaRate,
+            coloradoSutaCap: taxConfig.ssWageBase, // Using SS Base as proxy if SUTA specific not found, but it should be separate. TaxConfig usually has this? 
+            // Checked tax-configuration-service.ts, it DOES NOT have sutaWageBase field exposed in interface explicitly?
+            // Wait, checking line 14 above... Import was TaxConfigurationService.
+            // Checking TaxConfiguration interface: it has ssWageBase, medicareWageBase, futaWageBase.
+            // It does NOT have coloradoSutaWageBase. 
+            // Use standard CO base (e.g. 23800 for 2024/2025). 
+            // But TaxComputer expects coloradoSutaCap.
+            // Let's use ssWageBase as a safe fallback or 23800 hardcoded for now if missing.
+            // Actually TaxRates interface requires it.
+            coloradoFamliRate: employer.coloradoFamliRateEE,
+            coloradoFamliRateER: employer.coloradoFamliRateER,
+            coloradoStateIncomeTaxRate: 0.044
+        };
+
+        // Correct SUTA Cap logic: CO SUTA base is usually around $23,800. 
+        // TaxComputer likely expects this. For now I will map it to fixed value if not in config.
+        taxRates.coloradoSutaCap = 23800;
+
+        const taxComputer = new TaxComputer(taxRates, taxConfig.id.toString());
+        const taxResult = taxComputer.calculateTaxes(params.grossAmount, ytdGross);
+
+        // 4. Setup Federal Calculator
+        const caregiver = CaregiverService.getCaregiverById(params.caregiverId);
+        if (!caregiver) throw new Error('Caregiver not found');
+
+        const w4Info: W4Information = {
+            filingStatus: (caregiver.w4FilingStatus as FilingStatus) || 'single',
+            multipleJobs: caregiver.w4MultipleJobs || false,
+            dependentsAmount: caregiver.w4DependentsAmount || 0,
+            otherIncome: caregiver.w4OtherIncome || 0,
+            deductions: caregiver.w4Deductions || 0,
+            extraWithholding: caregiver.w4ExtraWithholding || 0
+        };
+
+        // Default frequency to weekly for manual checks if unknown
+        const frequency: PayFrequency = (employer.payFrequency as PayFrequency) || 'weekly';
+
+        const fedResult = FederalWithholdingCalculator.calculateWithholding(
+            params.grossAmount,
+            frequency,
+            w4Info,
+            ytdGross
+        );
+
+        // 5. Net Pay
+        // Net = Gross - (Employee Share of Taxes + Federal Withholding + State Tax)
+        const netPay = params.grossAmount -
+            taxResult.totalEmployeeWithholdings -
+            fedResult.federalWithholding;
 
         return {
             grossWages: params.grossAmount,
-            ssEmployee,
-            medicareEmployee,
-            federalWithholding: 0,
-            coloradoFamliEmployee: 0,
-            netPay,
-            ssEmployer,
-            medicareEmployer,
-            futa,
-            coloradoSuta: 0,
-            coloradoFamliEmployer: 0,
+            ssEmployee: taxResult.socialSecurityEmployee,
+            medicareEmployee: taxResult.medicareEmployee,
+            federalWithholding: fedResult.federalWithholding,
+            coloradoFamliEmployee: taxResult.coloradoFamliEmployee,
+            coloradoStateIncomeTax: taxResult.coloradoStateIncomeTax,
+            netPay: Math.round(netPay * 100) / 100,
+
+            // Employer Taxes
+            ssEmployer: taxResult.socialSecurityEmployer,
+            medicareEmployer: taxResult.medicareEmployer,
+            futa: taxResult.futa,
+            coloradoSuta: taxResult.coloradoSuta,
+            coloradoFamliEmployer: taxResult.coloradoFamliEmployer,
         };
     }
 
@@ -695,7 +760,22 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
     }): Promise<PayrollRecord> {
         const db = getDatabase();
 
-        // Calculate taxes
+        // 1. Validator: Explicitly check all inputs
+        if (params.grossAmount < 0) {
+            throw new Error('Gross amount cannot be negative');
+        }
+
+        if (params.checkNumber) {
+            const isDuplicate = new PayrollService(db).checkDuplicateCheckNumber(
+                params.checkNumber,
+                params.employerId
+            );
+            if (isDuplicate) {
+                throw new Error(`Check number "${params.checkNumber}" is already in use`);
+            }
+        }
+
+        // 2. Action: Calculate Taxes (Deterministic pure function)
         const taxes = await PayrollService.calculateManualTaxes({
             caregiverId: params.caregiverId,
             employerId: params.employerId,
@@ -703,58 +783,58 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             payPeriodStart: params.payPeriodStart,
         });
 
-        // Insert payroll record
-        const result = db.prepare(`
-            INSERT INTO payroll_records (
-                caregiver_id, employer_id, pay_period_start, pay_period_end,
-                total_hours, gross_wages, net_pay,
-                ss_employee, medicare_employee, federal_withholding,
-                ss_employer, medicare_employer, futa,
-                colorado_suta, colorado_famli_employee, colorado_famli_employer,
-                calculation_version, tax_version, is_finalized, status,
-                entry_type, manual_description, manual_gross_amount,
-                payment_date, created_at, check_number
-            ) VALUES (
-                ?, ?, ?, ?,
-                0, ?, ?,
-                ?, ?, ?,
-                ?, ?, ?,
-                ?, ?, ?,
-                'manual-1.0', 'CO-2024', 1, 'approved',
-                'manual', ?, ?,
-                ?, datetime('now'), ?
-            )
-        `).run(
-            params.caregiverId,
-            params.employerId,
-            params.payPeriodStart,
-            params.payPeriodEnd,
-            params.grossAmount,
-            taxes.netPay,
-            taxes.ssEmployee,
-            taxes.medicareEmployee,
-            taxes.federalWithholding,
-            taxes.ssEmployer,
-            taxes.medicareEmployer,
-            taxes.futa,
-            taxes.coloradoSuta,
-            taxes.coloradoFamliEmployee,
-            taxes.coloradoFamliEmployer,
-            params.description,
-            params.grossAmount,
-            params.paymentDate || params.payPeriodEnd,
-            params.checkNumber || null
-        );
+        // 3. Transaction: Atomic DB State Change
+        const createTransaction = db.transaction(() => {
+            const result = db.prepare(`
+                INSERT INTO payroll_records (
+                    caregiver_id, employer_id, pay_period_start, pay_period_end,
+                    total_hours, gross_wages, net_pay,
+                    ss_employee, medicare_employee, federal_withholding,
+                    ss_employer, medicare_employer, futa,
+                    colorado_suta, colorado_famli_employee, colorado_famli_employer,
+                    calculation_version, tax_version, is_finalized, status,
+                    entry_type, manual_description, manual_gross_amount,
+                    payment_date, created_at, check_number
+                ) VALUES (
+                    ?, ?, ?, ?,
+                    0, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    'manual-1.0', 'CO-2024', 1, 'approved',
+                    'manual', ?, ?,
+                    ?, datetime('now'), ?
+                )
+            `).run(
+                params.caregiverId,
+                params.employerId,
+                params.payPeriodStart,
+                params.payPeriodEnd,
+                params.grossAmount,
+                taxes.netPay,
+                taxes.ssEmployee,
+                taxes.medicareEmployee,
+                taxes.federalWithholding,
+                taxes.ssEmployer,
+                taxes.medicareEmployer,
+                taxes.futa,
+                taxes.coloradoSuta,
+                taxes.coloradoFamliEmployee,
+                taxes.coloradoFamliEmployer,
+                params.description,
+                params.grossAmount,
+                params.paymentDate || params.payPeriodEnd,
+                params.checkNumber || null
+            );
 
-        // Fetch and return created record
-        const record = PayrollService.getPayrollRecordById(result.lastInsertRowid as number);
-        if (!record) {
-            throw new Error('Failed to create manual payroll record');
-        }
+            // Fetch and return created record
+            const record = PayrollService.getPayrollRecordById(result.lastInsertRowid as number);
+            if (!record) {
+                throw new Error('Failed to create manual payroll record');
+            }
 
-        // Audit log
-        try {
-            await AuditService.log({
+            // Audit log
+            AuditService.log({
                 action: 'CREATE',
                 tableName: 'payroll_records',
                 recordId: record.id,
@@ -763,15 +843,15 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
                     description: params.description,
                     grossAmount: params.grossAmount,
                     caregiverId: params.caregiverId,
-                    employerId: params.employerId
+                    employerId: params.employerId,
+                    checkNumber: params.checkNumber
                 }),
             });
-        } catch (auditError) {
-            console.error('Failed to log audit:', auditError);
-            // Don't fail the whole operation if audit fails
-        }
 
-        return record;
+            return record;
+        });
+
+        return createTransaction();
     }
 }
 

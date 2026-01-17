@@ -11,7 +11,8 @@
     "dev:renderer": "webpack serve --mode development",
     "dev": "npm run build && electron dist/main/main.js",
     "package": "electron-builder --mac",
-    "test": "jest",
+    "test": "npm rebuild better-sqlite3 && jest",
+    "test:post": "electron-builder install-app-deps",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "postinstall": "electron-builder install-app-deps"

@@ -43,6 +43,8 @@ describe('BackupService', () => {
         service = new BackupService(getDatabase());
         jest.clearAllMocks();
         (fs.existsSync as jest.Mock).mockReturnValue(true);
+        (fs.readdirSync as jest.Mock).mockReturnValue([]);
+        (fs.unlinkSync as jest.Mock).mockImplementation(() => { });
     });
 
     describe('exportBackup', () => {

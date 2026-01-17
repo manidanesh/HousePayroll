@@ -17,9 +17,7 @@ const CaregiverSelectionScreen: React.FC<CaregiverSelectionScreenProps> = ({ onS
                 const data = await ipcAPI.caregiver.getAll(false); // Only active ones
                 setCaregivers(data);
 
-                // If only one, auto-select? The user said "if you have more than one", 
-                // but for consistency we'll show even for one unless requested otherwise.
-                // However, the user specifically said "if you have more than one".
+                // Auto-select if only one caregiver exists
                 if (data.length === 1) {
                     setSelectedCaregiver({ id: data[0].id, fullLegalName: data[0].fullLegalName });
                     onSelect();

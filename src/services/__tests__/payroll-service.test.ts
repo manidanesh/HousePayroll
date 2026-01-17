@@ -106,9 +106,52 @@ describe('PayrollService', () => {
             const approved = service.approveDraft(draft.id);
             expect(approved.id).toBe(draft.id);
 
-            // Should be no drafts left
+            // Should still be in drafts (as approved), but not finalized
             const drafts = service.getDrafts();
-            expect(drafts.length).toBe(0);
+            expect(drafts.length).toBe(1);
+            expect(drafts[0].status).toBe('approved');
+        });
+    });
+
+    describe('calculateManualTaxes', () => {
+        it('should calculate full taxes for manual gross amount', async () => {
+            // Gross: $1000
+            // Single, 2025 Rates
+            // FICA: $1000 * 7.65% = $76.50
+            // CO State: $1000 * 4.4% = $44.00
+            // CO FAMLI: $1000 * 0.45% = $4.50
+            // Fed Withholding: Dependent on W-4 (Default Single) -> likely tiny or 0 for $1000 weekly annualized
+            // Actually $1000 * 52 = $52k. Standard deduction $15k. Taxable $37k. 
+            // Tax is roughly 10-12%. So definitely > 0.
+
+            const result = await PayrollService.calculateManualTaxes({
+                caregiverId,
+                employerId: 1, // Assumed from test setup
+                grossAmount: 1000,
+                payPeriodStart: '2025-06-01'
+            });
+
+            expect(result.grossWages).toBe(1000);
+
+            // Validate Tax deductions are happening (not zero)
+            expect(result.ssEmployee).toBeCloseTo(62.00, 2); // 6.2%
+            expect(result.medicareEmployee).toBeCloseTo(14.50, 2); // 1.45%
+            expect(result.coloradoStateIncomeTax).toBeCloseTo(44.00, 2); // 4.4%
+            expect(result.coloradoFamliEmployee).toBeGreaterThan(0);
+
+            // Validate Federal Tax is calculated (User making $52k/yr pays fed tax)
+            // $1000 * 52 = 52000. 
+            // 52000 - 15000 (std ded) = 37000 taxable.
+            // Bracket 1 (10%): 11600 * 0.10 = 1160
+            // Bracket 2 (12%): (37000 - 11600) * 0.12 = 25400 * 0.12 = 3048
+            // Total Annual Tax = 1160 + 3048 = 4208
+            // Weekly Tax = 4208 / 52 = 80.92
+            expect(result.federalWithholding).toBeGreaterThan(50);
+            expect(result.federalWithholding).toBeLessThan(100);
+
+            // Validate Net Pay logic
+            const expectedDeductions = result.ssEmployee + result.medicareEmployee + result.federalWithholding + result.coloradoStateIncomeTax + result.coloradoFamliEmployee;
+            expect(result.netPay).toBeCloseTo(1000 - expectedDeductions, 2);
         });
     });
 });

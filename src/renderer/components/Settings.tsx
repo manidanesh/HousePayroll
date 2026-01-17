@@ -394,11 +394,7 @@ const Settings: React.FC = () => {
         }
     };
 
-    // This handleChange function was not in the original content, but was in the instruction's context.
-    // Assuming it was meant to be there or is a placeholder for something else.
-    // If it's not meant to be there, it should be removed.
-    // For now, I'm keeping the structure as per the instruction's context.
-    // const handleChange = (field: string, value: any) => {
+
 
     if (!employer) {
         return (
