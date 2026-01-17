@@ -1,0 +1,27 @@
+
+> household-payroll@1.0.0 package
+> electron-builder --mac
+
+  • electron-builder  version=26.0.12 os=24.6.0
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=39.2.7 arch=arm64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=arm64
+  • preparing       moduleName=better-sqlite3 arch=arm64
+  • finished        moduleName=better-sqlite3 arch=arm64
+  • completed installing native dependencies
+  • packaging       platform=darwin arch=arm64 electron=39.2.7 appOutDir=release/mac-arm64
+  • signing         file=release/mac-arm64/Household Payroll.app platform=darwin type=distribution identityName=Developer ID Application: Mani Danesh (3CXZWALQ26) identityHash=C5E8B3397752541A61FDF6AA75C43348C97E8925 provisioningProfile=none
+  • Above command failed, retrying 3 more times
+  • Above command failed, retrying 3 more times
+  • Above command failed, retrying 3 more times
+  • Above command failed, retrying 3 more times
+  ⨯ Command failed: codesign --sign Developer ID Application: Mani Danesh (3CXZWALQ26) --force --timestamp --options runtime --entitlements build/entitlements.mac.plist /Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU)
+/Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU): replacing existing signature
+/Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU): resource fork, Finder information, or similar detritus not allowed
+  failedTask=build stackTrace=Error: Command failed: codesign --sign Developer ID Application: Mani Danesh (3CXZWALQ26) --force --timestamp --options runtime --entitlements build/entitlements.mac.plist /Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU)
+/Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU): replacing existing signature
+/Users/Mani/Library/Mobile Documents/com~apple~CloudDocs/Applications/HousePayroll/release/mac-arm64/Household Payroll.app/Contents/Frameworks/Household Payroll Helper (GPU).app/Contents/MacOS/Household Payroll Helper (GPU): resource fork, Finder information, or similar detritus not allowed
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   at ChildProcess.exithandler (node:child_process:422:12)
+    at ChildProcess.emit (node:events:518:28)
+    at maybeClose (node:internal/child_process:1105:16)
+    at Process.ChildProcess._handle.onexit (node:internal/child_process:305:5)

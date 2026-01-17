@@ -46,7 +46,7 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "identity": "Developer ID Application: Mani Danesh (3CXZWALQ26)"
+      "identity": "Mani Danesh (3CXZWALQ26)"
     },
     "dmg": {
       "contents": [
