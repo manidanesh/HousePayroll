@@ -45,7 +45,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": "Developer ID Application: Mani Danesh (3CXZWALQ26)"
     },
     "dmg": {
       "contents": [
