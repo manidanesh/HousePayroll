@@ -147,45 +147,44 @@ export function initializeDatabase() {
   // RUN MIGRATIONS
   // ============================================================================
   runMigrations(database, currentVersion);
-}
 
-// ============================================================================
-// MIGRATION 13: Manual Payroll Entry Support
-// ============================================================================
-try {
-  database.exec(`ALTER TABLE payroll_records ADD COLUMN entry_type TEXT DEFAULT 'time-based'`);
-  logger.info('Added entry_type column to payroll_records');
-} catch (err) { }
+  // ============================================================================
+  // MIGRATION 13: Manual Payroll Entry Support
+  // ============================================================================
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN entry_type TEXT DEFAULT 'time-based'`);
+    logger.info('Added entry_type column to payroll_records');
+  } catch (err) { }
 
-try {
-  database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_description TEXT`);
-  logger.info('Added manual_description column to payroll_records');
-} catch (err) { }
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_description TEXT`);
+    logger.info('Added manual_description column to payroll_records');
+  } catch (err) { }
 
-try {
-  database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_gross_amount REAL`);
-  logger.info('Added manual_gross_amount column to payroll_records');
-} catch (err) { }
+  try {
+    database.exec(`ALTER TABLE payroll_records ADD COLUMN manual_gross_amount REAL`);
+    logger.info('Added manual_gross_amount column to payroll_records');
+  } catch (err) { }
 
-try {
-  database.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_entry_type ON payroll_records(entry_type)`);
-  logger.info('Created index on entry_type');
-} catch (err) { }
+  try {
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_payroll_entry_type ON payroll_records(entry_type)`);
+    logger.info('Created index on entry_type');
+  } catch (err) { }
 
-// Perform Health Checks
-try {
-  const health = database.pragma('integrity_check');
-  logger.info('Database integrity check', { result: health as any });
+  // Perform Health Checks
+  try {
+    const health = database.pragma('integrity_check');
+    logger.info('Database integrity check', { result: health as any });
 
-  // Optimize database
-  database.pragma('auto_vacuum = INCREMENTAL');
-  database.pragma('incremental_vacuum(100)'); // Vacuum up to 100 pages
-  database.exec('ANALYZE'); // Update statistics for query planner
-} catch (err) {
-  logger.error('Database health check failed', err as Error);
-}
+    // Optimize database
+    database.pragma('auto_vacuum = INCREMENTAL');
+    database.pragma('incremental_vacuum(100)'); // Vacuum up to 100 pages
+    database.exec('ANALYZE'); // Update statistics for query planner
+  } catch (err) {
+    logger.error('Database health check failed', err as Error);
+  }
 
-logger.info('Database initialized successfully');
+  logger.info('Database initialized successfully');
 }
 
 // Encryption utilities
