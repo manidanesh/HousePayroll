@@ -1,6 +1,6 @@
 {
   "name": "household-payroll",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A personal payroll application for household employers to manage caregiver payroll while maintaining compliance with U.S. federal and Colorado employment requirements.",
   "main": "dist/main/main.js",
   "scripts": {
@@ -27,7 +27,7 @@
   "license": "ISC",
   "build": {
     "appId": "com.household.payroll",
-    "productName": "Household Payroll",
+    "productName": "Household-Payroll",
     "publish": [
       {
         "provider": "github",
