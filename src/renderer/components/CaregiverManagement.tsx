@@ -233,9 +233,14 @@ const CaregiverForm: React.FC<CaregiverFormProps> = ({ caregiver, onClose }) => 
         return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 5)}-${cleaned.slice(5, 9)}`;
     };
 
+    // Validation: When editing, SSN is not required (can't be changed)
+    // When creating, SSN must be valid
     const isFormValid = formData.fullLegalName.length >= 3 &&
-        formData.ssn.length === 11 &&
-        parseFloat(formData.hourlyRate) > 0;
+        parseFloat(formData.hourlyRate) > 0 &&
+        (caregiver 
+            ? true  // Editing: SSN not required
+            : formData.ssn.length === 11  // Creating: SSN required
+        );
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
