@@ -536,10 +536,6 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
 
         this.run("UPDATE payroll_records SET status = 'approved' WHERE id = ? AND employer_id = ?", [draftId, employer.id]);
 
-        const entries = TimeEntryService.getTimeEntriesForDateRange(draft.payPeriodStart, draft.payPeriodEnd);
-        entries.filter((e: any) => e.caregiverId === draft.caregiverId).forEach((entry: any) => {
-            this.run('UPDATE time_entries SET is_finalized = 1 WHERE id = ?', [entry.id]);
-        });
 
         AuditService.log({
             tableName: 'payroll_records',
