@@ -1,6 +1,6 @@
 {
   "name": "household-payroll",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A personal payroll application for household employers to manage caregiver payroll while maintaining compliance with U.S. federal and Colorado employment requirements.",
   "main": "dist/main/main.js",
   "scripts": {
@@ -103,7 +103,7 @@
     "@electron/remote": "^2.1.3",
     "adm-zip": "^0.5.16",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.5.0",
+    "better-sqlite3": "^12.6.2",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
     "jspdf": "^4.0.0",
