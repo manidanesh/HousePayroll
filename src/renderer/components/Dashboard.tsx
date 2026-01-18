@@ -67,7 +67,7 @@ const Dashboard: React.FC = () => {
         <div className="dashboard">
             <aside className="sidebar">
                 <div className="sidebar-brand">
-                    <h1>PAYROLL HUB</h1>
+                    <h1>TIMESHEET & PAYROLL</h1>
                 </div>
 
                 <HouseholdSwitcher />

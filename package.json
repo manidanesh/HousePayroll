@@ -1,6 +1,6 @@
 {
   "name": "household-payroll",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A personal payroll application for household employers to manage caregiver payroll while maintaining compliance with U.S. federal and Colorado employment requirements.",
   "main": "dist/main/main.js",
   "scripts": {
