@@ -178,8 +178,8 @@ export class PaystubGenerator {
         doc.setFontSize(10);
 
         // --- EARNINGS DATA ---
-        const drawEarningRow = (label: string, rate: number, hours: number, current: number, ytdVal: number) => {
-            if (current === 0 && ytdVal === 0) return;
+        const drawEarningRow = (label: string, rate: number, hours: number, current: number, ytdVal: number, isMandatory?: boolean) => {
+            if (!isMandatory && current === 0 && ytdVal === 0) return;
 
             // Draw content
             if (label.length > 20) doc.setFontSize(8);
@@ -199,20 +199,28 @@ export class PaystubGenerator {
             leftY += rowHeight;
         };
 
-        const hourlyRate = (record.regular_wages || 0) / (record.regular_hours || 1);
+        // Calculate rate: if both hours and wages are zero, display 0.00; otherwise calculate rate
+        const regularHours = record.regular_hours || 0;
+        const regularWages = record.regular_wages || 0;
+        const hourlyRate = (regularHours === 0 && regularWages === 0) ? 0 : regularWages / (regularHours || 1);
 
-        drawEarningRow('Regular Earnings', hourlyRate, record.regular_hours || 0, record.regular_wages || 0, ytd.regularWages);
-        if (record.weekend_hours || ytd.weekendWages > 0) {
-            const rate = (record.weekend_wages || 0) / (record.weekend_hours || 1) || 0;
-            drawEarningRow('Weekend Premium', rate, record.weekend_hours || 0, record.weekend_wages || 0, ytd.weekendWages);
-        }
-        if (record.holiday_hours || ytd.holidayWages > 0) {
-            const rate = (record.holiday_wages || 0) / (record.holiday_hours || 1) || 0;
-            drawEarningRow('Holiday Premium', rate, record.holiday_hours || 0, record.holiday_wages || 0, ytd.holidayWages);
-        }
+        drawEarningRow('Regular Earnings', hourlyRate, regularHours, regularWages, ytd.regularWages, true);
+        
+        const weekendHours = record.weekend_hours || 0;
+        const weekendWages = record.weekend_wages || 0;
+        const weekendRate = (weekendHours === 0 && weekendWages === 0) ? 0 : weekendWages / (weekendHours || 1);
+        drawEarningRow('Weekend Premium', weekendRate, weekendHours, weekendWages, ytd.weekendWages, true);
+        
+        const holidayHours = record.holiday_hours || 0;
+        const holidayWages = record.holiday_wages || 0;
+        const holidayRate = (holidayHours === 0 && holidayWages === 0) ? 0 : holidayWages / (holidayHours || 1);
+        drawEarningRow('Holiday Premium', holidayRate, holidayHours, holidayWages, ytd.holidayWages, true);
+        
         if (record.overtime_hours || ytd.overtimeWages > 0) {
-            const rate = (record.overtime_wages || 0) / (record.overtime_hours || 1) || 0;
-            drawEarningRow('Overtime', rate, record.overtime_hours || 0, record.overtime_wages || 0, ytd.overtimeWages);
+            const overtimeHours = record.overtime_hours || 0;
+            const overtimeWages = record.overtime_wages || 0;
+            const rate = (overtimeHours === 0 && overtimeWages === 0) ? 0 : overtimeWages / (overtimeHours || 1);
+            drawEarningRow('Overtime', rate, overtimeHours, overtimeWages, ytd.overtimeWages);
         }
 
         // --- DEDUCTIONS DATA ---
@@ -268,16 +276,11 @@ export class PaystubGenerator {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
 
-        // Column headers
+        // Column headers with clear, non-overlapping labels
         doc.text('Gross Pay', 25, summaryY + 5, { align: 'center' });
-        doc.text('Total Deduction', 70, summaryY + 5, { align: 'center' });
-        doc.text('Total Deduction', 115, summaryY + 5, { align: 'center' });
-        doc.text('Net Pay', 160, summaryY + 5, { align: 'center' });
-
-        // Second line for subheaders
-        doc.setFontSize(7);
-        doc.text('(Employee)', 70, summaryY + 4.5, { align: 'center' });
-        doc.text('(Employer)', 115, summaryY + 4.5, { align: 'center' });
+        doc.text('Employee Deductions', 75, summaryY + 5, { align: 'center' });
+        doc.text('Employer Taxes', 125, summaryY + 5, { align: 'center' });
+        doc.text('Net Pay', 170, summaryY + 5, { align: 'center' });
 
         // Draw values row
         const valuesY = summaryY + 7;
@@ -288,9 +291,9 @@ export class PaystubGenerator {
         doc.setFontSize(11);
 
         doc.text(`$${currentGross.toFixed(2)}`, 25, valuesY + 5.5, { align: 'center' });
-        doc.text(`$${currentEmployeeDeductions.toFixed(2)}`, 70, valuesY + 5.5, { align: 'center' });
-        doc.text(`$${currentEmployerTaxes.toFixed(2)}`, 115, valuesY + 5.5, { align: 'center' });
-        doc.text(`$${currentNet.toFixed(2)}`, 160, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentEmployeeDeductions.toFixed(2)}`, 75, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentEmployerTaxes.toFixed(2)}`, 125, valuesY + 5.5, { align: 'center' });
+        doc.text(`$${currentNet.toFixed(2)}`, 170, valuesY + 5.5, { align: 'center' });
 
         // --- TOTALS FOOTER (YTD) ---
         // Align the bottom of both columns
