@@ -7,6 +7,11 @@ import { registerIpcHandlers } from './ipc-handlers';
 import { logger } from '../utils/logger';
 import { MacIntegration } from './macos-integration';
 
+// Pin userData to a stable directory name so all app versions share the same data,
+// regardless of productName changes (e.g. "Household-Payroll" vs "Household Payroll").
+// Must be called before app 'ready' fires.
+app.setPath('userData', path.join(app.getPath('appData'), 'household-payroll'));
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
