@@ -9,12 +9,13 @@ import { runMigrations, detectSchemaVersion } from './migrations';
 let db: Database.Database | null = null;
 
 // Use Electron's userData directory (platform-independent)
-// macOS: ~/Library/Application Support/Household Payroll/
-// Windows: %APPDATA%/Household Payroll/
-// Linux: ~/.config/Household Payroll/
-const DATA_DIR = app.getPath('userData');
-const keyPath = path.join(DATA_DIR, '.key');
-const keyPathEnc = path.join(DATA_DIR, '.key.enc');
+// macOS: ~/Library/Application Support/household-payroll/
+// Windows: %APPDATA%/household-payroll/
+// Linux: ~/.config/household-payroll/
+// NOTE: evaluated lazily inside functions so app.setPath() in main.ts takes effect first.
+const getDataDir = () => app.getPath('userData');
+const getKeyPath = () => path.join(getDataDir(), '.key');
+const getKeyPathEnc = () => path.join(getDataDir(), '.key.enc');
 let ENCRYPTION_KEY: string | null = null;
 
 /**
@@ -25,6 +26,9 @@ function loadEncryptionKey(): string {
   if (ENCRYPTION_KEY) return ENCRYPTION_KEY;
 
   try {
+    const keyPathEnc = getKeyPathEnc();
+    const keyPath = getKeyPath();
+
     // Require OS-native secure storage
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error(
@@ -71,7 +75,7 @@ function loadEncryptionKey(): string {
 
 export function getDatabase(): Database.Database {
   if (!db) {
-    const dbPath = path.join(DATA_DIR, 'payroll.db');
+    const dbPath = path.join(getDataDir(), 'payroll.db');
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
   }

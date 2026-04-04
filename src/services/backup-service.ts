@@ -7,12 +7,10 @@ import { encryptWithPassword, decryptWithPassword, validatePassword } from '../u
 import { logger } from '../utils/logger';
 
 // Use Electron's userData directory (platform-independent)
-// Note: app is only available in main process.
-// If this service is imported in renderer during testing without electron mock, it might fail.
-// But valid mocks exist.
-const DATA_DIR = app.getPath('userData');
-const DB_PATH = path.join(DATA_DIR, 'payroll.db');
-const KEY_PATH_ENC = path.join(DATA_DIR, '.key.enc');
+// NOTE: evaluated lazily so app.setPath() in main.ts takes effect first.
+const getDataDir = () => app.getPath('userData');
+const getDbPath = () => path.join(getDataDir(), 'payroll.db');
+const getKeyPathEnc = () => path.join(getDataDir(), '.key.enc');
 
 export class BackupService extends BaseRepository<any> {
 
@@ -42,7 +40,9 @@ export class BackupService extends BaseRepository<any> {
     // Instance Methods
 
     async exportBackup(destPath: string): Promise<void> {
-        // Ensure the source exists
+        const DB_PATH = getDbPath();
+        const KEY_PATH_ENC = getKeyPathEnc();
+
         if (!fs.existsSync(DB_PATH)) {
             throw new Error('Database file not found');
         }
@@ -57,17 +57,18 @@ export class BackupService extends BaseRepository<any> {
     }
 
     async importBackup(dbSrc: string): Promise<void> {
+        const DB_PATH = getDbPath();
+        const KEY_PATH_ENC = getKeyPathEnc();
+
         if (!fs.existsSync(dbSrc)) {
             throw new Error('Source database file not found');
         }
 
         const keySrc = dbSrc + '.key';
 
-        // Close the database connection before replacing the file
         closeDatabase();
 
         try {
-            // Backup current files just in case
             const timestamp = Date.now();
             if (fs.existsSync(DB_PATH)) {
                 fs.renameSync(DB_PATH, `${DB_PATH}.${timestamp}.bak`);
@@ -76,7 +77,6 @@ export class BackupService extends BaseRepository<any> {
                 fs.renameSync(KEY_PATH_ENC, `${KEY_PATH_ENC}.${timestamp}.bak`);
             }
 
-            // Copy new files
             fs.copyFileSync(dbSrc, DB_PATH);
             if (fs.existsSync(keySrc)) {
                 fs.copyFileSync(keySrc, KEY_PATH_ENC);
@@ -88,25 +88,22 @@ export class BackupService extends BaseRepository<any> {
     }
 
     async exportEncryptedBackup(password: string, savePath: string): Promise<void> {
+        const DB_PATH = getDbPath();
         logger.info('Starting encrypted backup export', { savePath });
 
-        // Validate password
         const passwordError = validatePassword(password);
         if (passwordError) {
             throw new Error(passwordError);
         }
 
-        // Ensure database exists
         if (!fs.existsSync(DB_PATH)) {
             throw new Error('Database file not found');
         }
 
         try {
-            // Read database file
             const dbData = fs.readFileSync(DB_PATH);
             const dbBase64 = dbData.toString('base64');
 
-            // Create backup metadata
             const backupData = {
                 version: '1.0',
                 created: new Date().toISOString(),
@@ -115,11 +112,9 @@ export class BackupService extends BaseRepository<any> {
                 data: dbBase64
             };
 
-            // Encrypt the backup data
             const jsonData = JSON.stringify(backupData);
             const encrypted = encryptWithPassword(jsonData, password);
 
-            // Create final backup file structure
             const backupFile = {
                 version: '1.0',
                 created: backupData.created,
@@ -127,7 +122,6 @@ export class BackupService extends BaseRepository<any> {
                 data: `${encrypted.salt}:${encrypted.iv}:${encrypted.authTag}:${encrypted.ciphertext}`
             };
 
-            // Write to file
             fs.writeFileSync(savePath, JSON.stringify(backupFile, null, 2), 'utf8');
 
             logger.info('Encrypted backup exported successfully', {
@@ -141,24 +135,21 @@ export class BackupService extends BaseRepository<any> {
     }
 
     async importFromBackup(backupPath: string, password: string): Promise<void> {
+        const DB_PATH = getDbPath();
         logger.info('Starting encrypted backup import', { backupPath });
 
-        // Ensure backup file exists
         if (!fs.existsSync(backupPath)) {
             throw new Error('Backup file not found');
         }
 
         try {
-            // Read backup file
             const backupContent = fs.readFileSync(backupPath, 'utf8');
             const backupFile = JSON.parse(backupContent);
 
-            // Validate backup file format
             if (!backupFile.version || !backupFile.encrypted || !backupFile.data) {
                 throw new Error('Invalid backup file format');
             }
 
-            // Parse encrypted data
             const parts = backupFile.data.split(':');
             if (parts.length !== 4) {
                 throw new Error('Corrupted backup file');
@@ -171,7 +162,6 @@ export class BackupService extends BaseRepository<any> {
                 ciphertext: parts[3]
             };
 
-            // Decrypt the backup data
             let decryptedJson: string;
             try {
                 decryptedJson = decryptWithPassword(encrypted, password);
@@ -181,15 +171,12 @@ export class BackupService extends BaseRepository<any> {
 
             const backupData = JSON.parse(decryptedJson);
 
-            // Validate decrypted data
             if (!backupData.data) {
                 throw new Error('Invalid backup data structure');
             }
 
-            // Close current database connection
             closeDatabase();
 
-            // Backup current database
             const timestamp = Date.now();
             if (fs.existsSync(DB_PATH)) {
                 const backupDbPath = `${DB_PATH}.${timestamp}.bak`;
@@ -197,7 +184,6 @@ export class BackupService extends BaseRepository<any> {
                 logger.info('Current database backed up', { backupDbPath });
             }
 
-            // Restore database from backup
             const dbData = Buffer.from(backupData.data, 'base64');
             fs.writeFileSync(DB_PATH, dbData);
 
