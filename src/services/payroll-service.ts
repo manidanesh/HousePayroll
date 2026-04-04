@@ -534,6 +534,15 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             throw new Error('Payroll is not in draft status');
         }
 
+        // Duplicate guard: reject if an approved, non-voided record already exists for the same caregiver and pay period
+        const existing = this.get<{ id: number }>(
+            `SELECT id FROM payroll_records WHERE caregiver_id = ? AND pay_period_start = ? AND pay_period_end = ? AND employer_id = ? AND status = 'approved' AND is_voided = 0 AND id != ?`,
+            [draft.caregiverId, draft.payPeriodStart, draft.payPeriodEnd, employer.id, draftId]
+        );
+        if (existing) {
+            throw new Error('An approved payroll record already exists for this caregiver and pay period.');
+        }
+
         this.run("UPDATE payroll_records SET status = 'approved' WHERE id = ? AND employer_id = ?", [draftId, employer.id]);
 
 
