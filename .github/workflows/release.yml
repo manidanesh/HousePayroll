@@ -1,0 +1,62 @@
+name: Release
+
+# Triggers when you push a version tag like v1.0.7
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Import Apple Developer certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          # Import certificate
+          echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          rm certificate.p12
+
+      - name: Package and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_KEYCHAIN: build.keychain
+          CSC_NAME: "Mani Danesh (3CXZWALQ26)"
+        run: npm run package -- --publish always
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain build.keychain || true
