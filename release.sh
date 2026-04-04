@@ -16,6 +16,10 @@ echo "Releasing v$VERSION..."
 # Bump version in package.json
 npm version "$VERSION" --no-git-tag-version
 
+# Rebuild native modules for Electron (prevents NODE_MODULE_VERSION mismatch)
+echo "Rebuilding native modules for Electron..."
+./node_modules/.bin/electron-rebuild -f -w better-sqlite3
+
 # Commit and tag
 git add package.json
 git commit -m "chore: bump version to $VERSION"
