@@ -232,23 +232,32 @@ export class ReportingService extends BaseRepository<any> {
     }
 
     getScheduleHData(year: number): {
-        line1: number;
-        line2: number;
-        line3: number;
-        line4: number;
-        line6: number;
-        line8: number;
-        line9: number;
-        line10: number;
-        line11: number;
-        line12: number;
-        line13: number;
-        line26: number;
+        // Pre-screening questions
+        questionA: boolean; // Any employee paid >= FICA threshold?
+        questionB: boolean; // Any federal income tax withheld?
+        questionC: boolean; // Total cash wages >= $1,000 in any quarter?
+        // Part I - SS, Medicare, FIT (IRS 2024 line numbers)
+        line1: number;  // SS-taxable wages
+        line2: number;  // SS tax (line1 x 12.4%)
+        line3: number;  // Medicare-taxable wages
+        line4: number;  // Medicare tax (line3 x 2.9%)
+        line5: number;  // Wages subject to Additional Medicare Tax (> $200k)
+        line6: number;  // Additional Medicare Tax (line5 x 0.9%)
+        line7: number;  // Federal income tax withheld
+        line8: number;  // Total Part I (lines 2+4+6+7)
+        // Part II - FUTA (IRS 2024 line numbers)
+        line15: number; // Total FUTA-taxable wages (capped at $7,000)
+        line16: number; // FUTA tax (line15 x 0.6%)
+        // Part III - Total
+        line25: number; // = line8
+        line26: number; // Total household employment taxes (line25 + line16)
     } {
         const ytd = this.getYTDSummary(year);
 
-        // thresholds for 2024
-        const ssThreshold = 2700;
+        // IRS 2024 FICA threshold: $2,700 (2024), $2,800 (2025)
+        const ssThreshold = year >= 2025 ? 2800 : 2700;
+        // Additional Medicare Tax threshold
+        const addlMedThreshold = 200000;
 
         const totals = ytd.reduce((acc, curr) => {
             if (curr.grossWages >= ssThreshold) {
@@ -257,25 +266,45 @@ export class ReportingService extends BaseRepository<any> {
             }
             acc.medWages += curr.grossWages;
             acc.medTax += (curr.medicareEmployee + curr.medicareEmployer);
+            // Additional Medicare Tax: wages over $200k subject to 0.9%
+            if (curr.grossWages > addlMedThreshold) {
+                acc.addlMedWages += (curr.grossWages - addlMedThreshold);
+            }
             acc.fit += curr.federalWithholding;
             acc.futaWages += Math.min(curr.grossWages, 7000);
             acc.futaTax += curr.futa;
             return acc;
-        }, { ssWages: 0, ssTax: 0, medWages: 0, medTax: 0, fit: 0, futaWages: 0, futaTax: 0 });
+        }, { ssWages: 0, ssTax: 0, medWages: 0, medTax: 0, addlMedWages: 0, fit: 0, futaWages: 0, futaTax: 0 });
+
+        // Pre-screening questions
+        const questionA = ytd.some(e => e.grossWages >= ssThreshold);
+        const questionB = ytd.some(e => e.federalWithholding > 0);
+        // Q-C: any quarter with >= $1,000 total? We approximate using annual / 4
+        const questionC = ytd.reduce((s, e) => s + e.grossWages, 0) / 4 >= 1000;
+
+        const addlMedTax = Math.round(totals.addlMedWages * 0.009 * 100) / 100;
+        const line8 = totals.ssTax + totals.medTax + addlMedTax + totals.fit;
+        const line16 = Math.round(totals.futaWages * 0.006 * 100) / 100;
 
         return {
+            questionA,
+            questionB,
+            questionC,
+            // Part I
             line1: totals.ssWages,
             line2: totals.ssTax,
             line3: totals.medWages,
             line4: totals.medTax,
-            line6: totals.fit,
-            line8: totals.ssTax + totals.medTax + totals.fit,
-            line9: totals.ssTax + totals.medTax + totals.fit,
-            line10: totals.futaWages,
-            line11: totals.futaWages * 0.06,
-            line12: (totals.futaWages * 0.06) - totals.futaTax, // Estimated Credit
-            line13: totals.futaTax, // Final FUTA Tax
-            line26: totals.ssTax + totals.medTax + totals.fit + totals.futaTax
+            line5: totals.addlMedWages,
+            line6: addlMedTax,
+            line7: totals.fit,
+            line8,
+            // Part II
+            line15: totals.futaWages,
+            line16,
+            // Part III
+            line25: line8,
+            line26: line8 + line16
         };
     }
 

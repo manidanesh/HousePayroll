@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CaregiverManagement from './CaregiverManagement';
+import TaxCenter from './TaxCenter';
 import TimeTracking from './TimeTracking';
 import Settings from './Settings';
 import Reports from './Reports';
@@ -17,6 +18,14 @@ const Dashboard: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
         return localStorage.getItem('theme') === 'dark';
     });
+    const [taxNotifCount, setTaxNotifCount] = useState<number>(0);
+
+    // Load tax notification badge count on mount
+    useEffect(() => {
+        window.electronAPI?.invoke('taxNotif:getUnreadCount')
+            .then((count: number) => setTaxNotifCount(count ?? 0))
+            .catch(() => {});
+    }, []);
 
     React.useEffect(() => {
         if (isDarkMode) {
@@ -58,6 +67,7 @@ const Dashboard: React.FC = () => {
             case 'reports': return prefix + 'Financial Reports';
             case 'payments': return prefix + 'Stripe Payments';
             case 'history': return prefix + 'Audit Trail';
+            case 'taxCenter': return '📋 Tax Season Center';
             case 'settings': return 'System Settings';
             default: return 'Dashboard';
         }
@@ -115,6 +125,28 @@ const Dashboard: React.FC = () => {
                     >
                         📜 Audit Trail
                     </button>
+
+                    {/* Tax Season Center — always visible, badge when deadlines approaching */}
+                    <button
+                        className={`sidebar-item ${activeTab === 'taxCenter' ? 'active' : ''}`}
+                        onClick={() => { setActiveTab('taxCenter'); setTaxNotifCount(0); }}
+                        style={{ position: 'relative' }}
+                    >
+                        📋 Tax Center
+                        {taxNotifCount > 0 && (
+                            <span style={{
+                                position: 'absolute', top: 6, right: 10,
+                                background: '#dc2626', color: '#fff',
+                                borderRadius: 99, fontSize: 10, fontWeight: 800,
+                                minWidth: 18, height: 18, display: 'flex',
+                                alignItems: 'center', justifyContent: 'center',
+                                padding: '0 4px'
+                            }}>
+                                {taxNotifCount}
+                            </span>
+                        )}
+                    </button>
+
                     <button
                         className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}
                         onClick={() => setActiveTab('settings')}
@@ -147,6 +179,28 @@ const Dashboard: React.FC = () => {
                     </div>
                 </header>
 
+                {/* Tax Deadline Notification Banner — shown on any tab when urgent */}
+                {taxNotifCount > 0 && activeTab !== 'taxCenter' && (
+                    <div style={{
+                        background: '#7f1d1d', color: '#fff',
+                        padding: '10px 20px',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        fontSize: 13, fontWeight: 600
+                    }}>
+                        <span>🚨 {taxNotifCount} tax deadline{taxNotifCount > 1 ? 's' : ''} require{taxNotifCount === 1 ? 's' : ''} your attention</span>
+                        <button
+                            onClick={() => { setActiveTab('taxCenter'); setTaxNotifCount(0); }}
+                            style={{
+                                background: '#fff', color: '#7f1d1d',
+                                border: 'none', borderRadius: 8,
+                                padding: '5px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 12
+                            }}
+                        >
+                            Go to Tax Center →
+                        </button>
+                    </div>
+                )}
+
                 <main className="dashboard-content">
                     {activeTab === 'caregivers' && <CaregiverManagement />}
                     {activeTab === 'time' && <TimeTracking />}
@@ -155,6 +209,7 @@ const Dashboard: React.FC = () => {
                     {activeTab === 'reports' && <Reports />}
                     {activeTab === 'payments' && <PaymentsDashboard />}
                     {activeTab === 'history' && <AuditLog />}
+                    {activeTab === 'taxCenter' && <TaxCenter />}
                     {activeTab === 'settings' && <Settings />}
                 </main>
             </div>

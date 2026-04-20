@@ -3,7 +3,7 @@
  * All database access happens here, renderer communicates via IPC
  */
 
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getDatabase } from '../database/db';
@@ -20,6 +20,10 @@ import { BackupService } from '../services/backup-service';
 import { YearEndService } from '../services/year-end-service';
 import { ColoradoTaxService } from '../services/colorado-tax-service';
 import { W2Service } from '../services/w2-service';
+import { TaxFormService } from '../services/tax-form-service';
+import { TaxNotificationService } from '../services/tax-notification-service';
+import { TaxPaymentService } from '../services/tax-payment-service';
+import { W3Service } from '../services/w3-service';
 import { decrypt } from '../database/db';
 import { AuditService } from '../services/audit-service';
 import { StripeService } from '../services/stripe-service';
@@ -724,6 +728,238 @@ export function registerIpcHandlers() {
 
     ipcMain.handle('database:stats', async () => {
         return DatabaseCleanup.getDatabaseStats();
+    });
+
+    // ── Tax Form Generation Handlers ────────────────────────────────────────
+
+    /** Generate a single caregiver W-2 PDF and open save dialog */
+    ipcMain.handle('taxForm:generateW2', async (_event, year: number, caregiverId: number) => {
+        const caregiver = CaregiverService.getCaregiverById(caregiverId);
+        if (!caregiver) throw new Error('Caregiver not found');
+
+        const result = await dialog.showSaveDialog({
+            title: `Generate W-2 for ${caregiver.fullLegalName} (${year})`,
+            defaultPath: `W2_${caregiver.fullLegalName.replace(/\s+/g, '_')}_${year}.pdf`,
+            filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+        });
+
+        if (!result.filePath) return { success: false };
+
+        const buffer = await TaxFormService.generateW2Buffer(year, caregiverId);
+        fs.writeFileSync(result.filePath, buffer);
+        TaxFormService.logGeneration('W2', year, caregiverId, caregiver.fullLegalName, result.filePath);
+        TaxNotificationService.markGenerated('W-2', year, result.filePath);
+        logger.info(`W-2 generated for ${caregiver.fullLegalName} (${year})`, { path: result.filePath });
+        return { success: true, path: result.filePath };
+    });
+
+    /** Generate W-2 PDFs for ALL caregivers, save to a folder */
+    ipcMain.handle('taxForm:generateW2All', async (_event, year: number) => {
+        const result = await dialog.showOpenDialog({
+            title: `Choose folder to save all W-2s for ${year}`,
+            properties: ['openDirectory', 'createDirectory']
+        });
+
+        if (!result.filePaths || result.filePaths.length === 0) return { success: false };
+        const folder = result.filePaths[0];
+
+        const buffers = await TaxFormService.generateAllW2Buffers(year);
+        const saved: string[] = [];
+        for (const { caregiverName, buffer } of buffers) {
+            const filePath = path.join(folder, `W2_${caregiverName.replace(/\s+/g, '_')}_${year}.pdf`);
+            fs.writeFileSync(filePath, buffer);
+            saved.push(filePath);
+        }
+        TaxNotificationService.markGenerated('W-2', year, folder);
+        return { success: true, count: saved.length, folder };
+    });
+
+    /** Generate Schedule H PDF and open save dialog */
+    ipcMain.handle('taxForm:generateScheduleH', async (_event, year: number) => {
+        const result = await dialog.showSaveDialog({
+            title: `Generate IRS Schedule H for ${year}`,
+            defaultPath: `Schedule_H_${year}.pdf`,
+            filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+        });
+
+        if (!result.filePath) return { success: false };
+
+        const buffer = await TaxFormService.generateScheduleHBuffer(year);
+        fs.writeFileSync(result.filePath, buffer);
+        TaxFormService.logGeneration('SCHEDULE_H', year, undefined, undefined, result.filePath);
+        TaxNotificationService.markGenerated('Schedule H', year, result.filePath);
+        logger.info(`Schedule H generated for ${year}`, { path: result.filePath });
+        return { success: true, path: result.filePath };
+    });
+
+    /** Generate DR 1093 PDF and open save dialog */
+    ipcMain.handle('taxForm:generateDR1093', async (_event, year: number) => {
+        const result = await dialog.showSaveDialog({
+            title: `Generate Colorado DR 1093 for ${year}`,
+            defaultPath: `DR_1093_${year}.pdf`,
+            filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+        });
+
+        if (!result.filePath) return { success: false };
+
+        const buffer = await TaxFormService.generateDR1093Buffer(year);
+        fs.writeFileSync(result.filePath, buffer);
+        TaxFormService.logGeneration('DR_1093', year, undefined, undefined, result.filePath);
+        TaxNotificationService.markGenerated('DR 1093', year, result.filePath);
+        logger.info(`DR 1093 generated for ${year}`, { path: result.filePath });
+        return { success: true, path: result.filePath };
+    });
+
+    /** Return preview data for a form (for the Tax Center preview modal) */
+    ipcMain.handle('taxForm:getPreviewData', (_event, year: number, formType: string) => {
+        if (formType === 'SCHEDULE_H') {
+            return ReportingService.getScheduleHData(year);
+        }
+        if (formType === 'W2') {
+            return ReportingService.getYTDSummary(year);
+        }
+        if (formType === 'DR_1093') {
+            const employer = EmployerService.getEmployer();
+            if (!employer) return null;
+            const db = getDatabase();
+            const row = db.prepare(`
+                SELECT COUNT(DISTINCT caregiver_id) as w2_count,
+                       COALESCE(SUM(colorado_state_income_tax), 0) as total_co_sit
+                FROM payroll_records
+                WHERE employer_id = ? AND pay_period_end BETWEEN ? AND ?
+                  AND is_finalized = 1 AND is_voided = 0
+            `).get(employer.id, `${year}-01-01`, `${year}-12-31`) as any;
+            return {
+                employerName: employer.displayName,
+                uiAccountNumber: employer.uiAccountNumber || 'Not Set',
+                w2Count: row?.w2_count ?? 0,
+                line1: row?.total_co_sit ?? 0,
+                line2: row?.total_co_sit ?? 0,
+                taxYear: year
+            };
+        }
+        if (formType === 'W3') {
+            return W3Service.computeW3Totals(year);
+        }
+        return null;
+    });
+
+    /** Return form generation log for given year */
+    ipcMain.handle('taxForm:getLog', (_event, year: number) => {
+        return TaxFormService.getFormLog(year);
+    });
+
+    /** Open a previously saved form file in the OS default PDF viewer */
+    ipcMain.handle('taxForm:openFile', async (_event, filePath: string) => {
+        if (fs.existsSync(filePath)) {
+            await shell.openPath(filePath);
+            return { success: true };
+        }
+        return { success: false, error: 'File not found' };
+    });
+
+    // ── Tax Notification Handlers ───────────────────────────────────────────
+
+    ipcMain.handle('taxNotif:getAll', (_event, year?: number) => {
+        TaxNotificationService.clearStaleDismissals();
+        return TaxNotificationService.getActiveNotifications(year);
+    });
+
+    ipcMain.handle('taxNotif:dismiss', (_event, notificationId: string) => {
+        TaxNotificationService.dismiss(notificationId);
+        return { success: true };
+    });
+
+    ipcMain.handle('taxNotif:getUnreadCount', () => {
+        return TaxNotificationService.getUnreadCount();
+    });
+
+    ipcMain.handle('taxNotif:getCurrentTaxYear', () => {
+        return TaxNotificationService.getCurrentTaxYear();
+    });
+
+    // ── CO Tax Payment Tracker Handlers ─────────────────────────────────────
+
+    /** Add a new CO DOR remittance payment (for DR 1093 Line 2) */
+    ipcMain.handle('taxPayment:add', (_event, input: {
+        taxYear: number;
+        paymentDate: string;
+        amount: number;
+        quarter?: 1 | 2 | 3 | 4;
+        method?: string;
+        referenceNumber?: string;
+        notes?: string;
+    }) => {
+        return TaxPaymentService.addPayment(input as any);
+    });
+
+    /** Delete a CO DOR remittance payment by ID */
+    ipcMain.handle('taxPayment:delete', (_event, id: number) => {
+        TaxPaymentService.deletePayment(id);
+        return { success: true };
+    });
+
+    /** Get all payments for a given tax year */
+    ipcMain.handle('taxPayment:list', (_event, taxYear: number) => {
+        return TaxPaymentService.getPayments(taxYear);
+    });
+
+    /** Get full DR 1093 Line 1 / Line 2 summary for a tax year */
+    ipcMain.handle('taxPayment:getSummary', (_event, taxYear: number) => {
+        return TaxPaymentService.getSummary(taxYear);
+    });
+
+    // ── W-3 Transmittal Handlers ─────────────────────────────────────────────
+
+    /** Get pre-computed W-3 totals for preview */
+    ipcMain.handle('taxForm:getW3Preview', (_event, year: number) => {
+        return W3Service.computeW3Totals(year);
+    });
+
+    /** Generate W-3 PDF — prompts for save location */
+    ipcMain.handle('taxForm:generateW3', async (_event, year: number) => {
+        const employer = EmployerService.getEmployer();
+        if (!employer) return { success: false, error: 'No employer profile found' };
+
+        const { dialog } = await import('electron');
+        const { canceled, filePath } = await dialog.showSaveDialog({
+            title: `Save W-3 Transmittal (${year})`,
+            defaultPath: `W3_Transmittal_${year}.pdf`,
+            filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        });
+
+        if (canceled || !filePath) return { success: false, canceled: true };
+
+        try {
+            const buf = await W3Service.generateW3Buffer(year);
+            const fs = await import('fs');
+            fs.writeFileSync(filePath, buf);
+
+            // Log to tax_form_log
+            const db = getDatabase();
+            db.prepare(`
+                INSERT INTO tax_form_log (employer_id, form_type, tax_year, generated_at, file_path)
+                VALUES (?, 'W3', ?, datetime('now'), ?)
+            `).run(employer.id, year, filePath);
+
+            logger.info(`W-3 generated (${year})`, { path: filePath });
+            return { success: true, filePath };
+        } catch (err: any) {
+            logger.error('W-3 generation failed', { error: err.message });
+            return { success: false, error: err.message };
+        }
+    });
+
+    // ── Shell — open URLs in default browser ─────────────────────────────────
+    ipcMain.handle('shell:openExternal', (_event, url: string) => {
+        // Whitelist only known-safe domains
+        const allowed = ['https://www.ssa.gov/', 'https://ssa.gov/', 'https://www.irs.gov/', 'https://tax.colorado.gov/'];
+        if (!allowed.some(prefix => url.startsWith(prefix))) {
+            logger.warn('Blocked shell:openExternal for unrecognized URL', { url });
+            return { success: false, error: 'URL not in allowlist' };
+        }
+        shell.openExternal(url);
+        return { success: true };
     });
 
     logger.info('IPC handlers registered');

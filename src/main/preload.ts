@@ -67,7 +67,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
             // Cleanup
             'cleanup:orphanedRecords', 'cleanup:oldAuditLogs',
             // System
-            'system:promptSaveFile', 'system:openExternal'
+            'system:promptSaveFile', 'system:openExternal',
+            // Tax Form Generation
+            'taxForm:generateW2', 'taxForm:generateW2All',
+            'taxForm:generateScheduleH', 'taxForm:generateDR1093',
+            'taxForm:getPreviewData', 'taxForm:getLog', 'taxForm:openFile',
+            // Tax Notifications
+            'taxNotif:getAll', 'taxNotif:dismiss',
+            'taxNotif:getUnreadCount', 'taxNotif:getCurrentTaxYear',
+            // DB helpers
+            'database:cleanup:caregivers', 'database:stats',
+            // Tax generate W2 (legacy alias)
+            'tax:generateW2', 'tax:exportFAMLI', 'tax:exportSUI', 'tax:getQuarterlyData',
+            // YTD
+            'ytd:getGrossWages', 'ytd:getContext', 'payroll:getLastFinalizedDate',
+            'payroll:void', 'payroll:create', 'payroll:getById', 'payroll:getDrafts', 'payroll:deleteDraft',
+            // CO Tax Payment Tracker (DR 1093 Line 2)
+            'taxPayment:add', 'taxPayment:delete', 'taxPayment:list', 'taxPayment:getSummary',
+            // Form W-3 Transmittal
+            'taxForm:getW3Preview', 'taxForm:generateW3',
+            // Shell — open URLs in default browser (domain-whitelisted in main)
+            'shell:openExternal'
         ];
 
         if (validChannels.includes(channel)) {

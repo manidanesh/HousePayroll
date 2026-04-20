@@ -175,6 +175,56 @@ export function initializeDatabase() {
     logger.info('Created index on entry_type');
   } catch (err) { }
 
+  // ============================================================================
+  // Tax Form Generation Tables
+  // ============================================================================
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS tax_form_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employer_id INTEGER NOT NULL,
+        form_type TEXT NOT NULL,
+        tax_year INTEGER NOT NULL,
+        caregiver_id INTEGER,
+        caregiver_name TEXT,
+        generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        file_path TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_tax_form_log_employer_year ON tax_form_log(employer_id, tax_year);
+    `);
+    logger.info('Tax form log table ensured');
+  } catch (err) { }
+
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS tax_notification_dismissals (
+        id TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    logger.info('Tax notification dismissals table ensured');
+  } catch (err) { }
+
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS co_tax_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employer_id INTEGER NOT NULL,
+        tax_year INTEGER NOT NULL,
+        payment_date TEXT NOT NULL,
+        amount REAL NOT NULL,
+        quarter INTEGER,
+        method TEXT NOT NULL DEFAULT 'EFT',
+        reference_number TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_co_tax_payments_employer_year
+        ON co_tax_payments(employer_id, tax_year);
+    `);
+    logger.info('CO tax payments table ensured');
+  } catch (err) { }
+
   // Perform Health Checks
   try {
     const health = database.pragma('integrity_check');
