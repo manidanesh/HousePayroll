@@ -279,6 +279,7 @@ const Reports: React.FC = () => {
                                     <th>SS (Emp)</th>
                                     <th>Medicare (Emp)</th>
                                     <th>FIT</th>
+                                    <th>CO State Tax</th>
                                     <th>FAMLI (EE)</th>
                                     <th>Net Pay</th>
                                     <th>Employer Taxes</th>
@@ -293,6 +294,7 @@ const Reports: React.FC = () => {
                                         <td>${item.ssEmployee.toFixed(2)}</td>
                                         <td>${item.medicareEmployee.toFixed(2)}</td>
                                         <td>${item.federalWithholding.toFixed(2)}</td>
+                                        <td>${(item.coloradoStateIncomeTax || 0).toFixed(2)}</td>
                                         <td>${item.coloradoFamliEmployee.toFixed(2)}</td>
                                         <td className="bold">${item.netPay.toFixed(2)}</td>
                                         <td className="text-danger">${item.totalEmployerTaxes.toFixed(2)}</td>

@@ -26,6 +26,7 @@ export interface YTDSummary {
     coloradoFamliEmployee: number;
     coloradoFamliEmployer: number;
     overtimeWages: number;
+    coloradoStateIncomeTax: number;
     totalEmployerTaxes: number;
 }
 
@@ -107,7 +108,8 @@ export class ReportingService extends BaseRepository<any> {
                 SUM(pr.colorado_suta) as colorado_suta,
                 SUM(pr.colorado_famli_employee) as colorado_famli_employee,
                 SUM(pr.colorado_famli_employer) as colorado_famli_employer,
-                SUM(pr.overtime_wages) as overtime_wages
+                SUM(pr.overtime_wages) as overtime_wages,
+                SUM(pr.colorado_state_income_tax) as colorado_state_income_tax
             FROM caregivers c
             LEFT JOIN payroll_records pr ON c.id = pr.caregiver_id
             WHERE pr.employer_id = ? AND pr.pay_period_end BETWEEN ? AND ? AND pr.is_finalized = 1 AND pr.is_voided = 0
@@ -138,6 +140,7 @@ export class ReportingService extends BaseRepository<any> {
             coloradoFamliEmployee: row.colorado_famli_employee || 0,
             coloradoFamliEmployer: row.colorado_famli_employer || 0,
             overtimeWages: row.overtime_wages || 0,
+            coloradoStateIncomeTax: row.colorado_state_income_tax || 0,
             totalEmployerTaxes: (row.ss_employer || 0) + (row.medicare_employer || 0) + (row.futa || 0) + (row.colorado_suta || 0) + (row.colorado_famli_employer || 0)
         }));
     }
