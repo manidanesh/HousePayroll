@@ -534,14 +534,17 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             throw new Error('Payroll is not in draft status');
         }
 
-        // Duplicate guard: reject if an approved, non-voided record already exists for the same caregiver and pay period
-        const existing = this.get<{ id: number }>(
-            `SELECT id FROM payroll_records WHERE caregiver_id = ? AND pay_period_start = ? AND pay_period_end = ? AND employer_id = ? AND status = 'approved' AND is_voided = 0 AND id != ?`,
+        // Clean up any abandoned unfinalized drafts for this exact period to prevent blocking the user.
+        // The frontend no longer supports resuming pending payrolls, so unfinalized approved records
+        // for the same period are just abandoned sessions that should be overwritten.
+        this.run(
+            `DELETE FROM payroll_records WHERE caregiver_id = ? AND pay_period_start = ? AND pay_period_end = ? AND employer_id = ? AND is_finalized = 0 AND status = 'approved' AND id != ?`,
             [draft.caregiverId, draft.payPeriodStart, draft.payPeriodEnd, employer.id, draftId]
         );
-        if (existing) {
-            throw new Error('An approved payroll record already exists for this caregiver and pay period.');
-        }
+
+        // We removed the hard throw here for finalized records. 
+        // If a user is approving a draft for a period that already has a finalized record, 
+        // it means they explicitly acknowledged the overlap warning in the UI to run a supplemental/correction payroll.
 
         this.run("UPDATE payroll_records SET status = 'approved' WHERE id = ? AND employer_id = ?", [draftId, employer.id]);
 

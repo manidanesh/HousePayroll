@@ -133,11 +133,9 @@ describe('PayrollService', () => {
             // Save draft B for the same caregiver + same pay period
             const draftB = service.saveDraft(result, '2025-02-01', '2025-02-07');
 
-            // BUG CONDITION: approveDraft(B.id) should throw but currently does NOT
-            // This test is EXPECTED TO FAIL on unfixed code — failure confirms the bug
-            expect(() => service.approveDraft(draftB.id)).toThrow(
-                'An approved payroll record already exists for this caregiver and pay period.'
-            );
+            // REVISED BEHAVIOR: approveDraft(B.id) should NOT throw. 
+            // Instead, it should clean up the abandoned draftA and succeed.
+            expect(() => service.approveDraft(draftB.id)).not.toThrow();
         });
 
         it('should NOT throw when the only prior record for the same period is voided', () => {
