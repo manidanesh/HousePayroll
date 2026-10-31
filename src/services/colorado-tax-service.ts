@@ -13,6 +13,10 @@ export interface ColoradoQuarterlyData {
     eeContribution: number;
     erContribution: number;
     references: string;
+    // Per-record SUI snapshots (FR-03): the actual taxable wages and premium paid
+    // for the quarter, derived from each finalized record's rate/amount snapshot.
+    suiTaxable: number;
+    suiPaid: number;
 }
 
 export class ColoradoTaxService extends BaseRepository<any> {
@@ -62,7 +66,7 @@ export class ColoradoTaxService extends BaseRepository<any> {
         // We should calculate `gross_wages` = `regular_wages + weekend_wages + holiday_wages + overtime_wages`.
 
         const cleanRows = this.all<any>(`
-            SELECT 
+            SELECT
                 c.id,
                 c.full_legal_name,
                 c.ssn_encrypted,
@@ -71,15 +75,17 @@ export class ColoradoTaxService extends BaseRepository<any> {
                 SUM(CASE WHEN pr.pay_period_end >= ? THEN pr.total_hours ELSE 0 END) as total_hours,
                 SUM(CASE WHEN pr.pay_period_end >= ? THEN pr.colorado_famli_employee ELSE 0 END) as ee_contribution,
                 SUM(CASE WHEN pr.pay_period_end >= ? THEN pr.colorado_famli_employer ELSE 0 END) as er_contribution,
+                SUM(CASE WHEN pr.pay_period_end >= ? THEN pr.employer_sui_paid ELSE 0 END) as sui_paid,
+                SUM(CASE WHEN pr.pay_period_end >= ? THEN ROUND(CASE WHEN pr.employer_sui_rate > 0 THEN pr.employer_sui_paid / pr.employer_sui_rate ELSE 0 END, 2) ELSE 0 END) as sui_taxable,
                 GROUP_CONCAT(COALESCE(pr.check_number, 'N/A'), '; ') as all_references
             FROM caregivers c
             JOIN payroll_records pr ON c.id = pr.caregiver_id
-            WHERE pr.employer_id = ? 
-              AND pr.pay_period_end BETWEEN ? AND ? 
-              AND pr.is_finalized = 1 
+            WHERE pr.employer_id = ?
+              AND pr.pay_period_end BETWEEN ? AND ?
+              AND pr.is_finalized = 1
               AND pr.is_voided = 0
             GROUP BY c.id
-        `, [startDate, startDate, startDate, startDate, startDate, employer.id, `${year}-01-01`, endDate]);
+        `, [startDate, startDate, startDate, startDate, startDate, startDate, startDate, employer.id, `${year}-01-01`, endDate]);
 
         return cleanRows.map(row => ({
             caregiverId: row.id,
@@ -90,7 +96,9 @@ export class ColoradoTaxService extends BaseRepository<any> {
             hoursWorked: row.total_hours || 0,
             eeContribution: row.ee_contribution || 0,
             erContribution: row.er_contribution || 0,
-            references: row.all_references || 'N/A'
+            references: row.all_references || 'N/A',
+            suiTaxable: row.sui_taxable || 0,
+            suiPaid: row.sui_paid || 0,
         }));
     }
 
@@ -99,10 +107,10 @@ export class ColoradoTaxService extends BaseRepository<any> {
      * Format: FEIN, EAN, Quarter, Year, SSN, Last Name, First Name, Middle Initial, Total Wages, Excess Wages, Taxable Wages, SUI Tax Due, Reference
      */
     generateSUI_CSV(ean: string, fein: string, quarter: number, year: number, data: ColoradoQuarterlyData[]): string {
-        const employer = EmployerService.getEmployer();
-        const wageBase = employer?.suiWageBase || 16000;
-        const suiRate = employer?.coloradoSutaRate || 0.0;
-
+        // FR-03: derive SUI taxable wages and the tax due from per-record snapshots
+        // (suiTaxable = SUM(employer_sui_paid / employer_sui_rate), suiPaid = SUM(employer_sui_paid))
+        // so historical quarters reflect the rate and wage base actually in effect at the time —
+        // never the current live employer rate/wage base.
         const headers = ['FEIN', 'EAN', 'Quarter', 'Year', 'SSN', 'Last Name', 'First Name', 'Middle Initial', 'Total Wages', 'Excess Wages', 'Taxable Wages', 'SUI Tax Due', 'Reference'];
         const rows = data.map(item => {
             const names = item.caregiverName.split(' ');
@@ -111,13 +119,9 @@ export class ColoradoTaxService extends BaseRepository<any> {
             const middleInitial = names.length > 2 ? names[1][0] : '';
 
             const totalWages = item.totalWages;
-            const priorWages = item.priorYtdWages;
-
-            const taxableBefore = Math.min(priorWages, wageBase);
-            const taxableAfter = Math.min(priorWages + totalWages, wageBase);
-            const taxableThisQuarter = Math.max(0, taxableAfter - taxableBefore);
+            const taxableThisQuarter = item.suiTaxable || 0;
             const excessThisQuarter = Math.max(0, totalWages - taxableThisQuarter);
-            const suiTaxDue = taxableThisQuarter * suiRate;
+            const suiTaxDue = item.suiPaid || 0;
 
             return [
                 fein,

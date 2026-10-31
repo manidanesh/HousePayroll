@@ -13,6 +13,8 @@ import { YTDService } from './ytd-service';
 import { TaxComputer, TaxRates } from '../core/tax-computer';
 import { FederalWithholdingCalculator, W4Information, PayFrequency, FilingStatus } from '../core/federal-withholding-calculator';
 import { TaxConfigurationService } from './tax-configuration-service';
+import { SuiRateService } from './sui-rate-service';
+import { ServiceAddressService } from './service-address-service';
 
 export interface PayrollRecord {
     id: number;
@@ -56,6 +58,7 @@ export interface PayrollRecord {
     paymentMethod?: string;
     isLatePayment?: boolean;
     i9Snapshot?: boolean;
+    serviceAddressSnapshot?: string | null;
     createdAt: string;
 }
 
@@ -141,6 +144,10 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
         const caregiver = CaregiverService.getCaregiverById(result.caregiverId);
         const i9Snapshot = caregiver?.i9Completed ? 1 : 0;
 
+        // Snapshot the provisional SUI rate resolved for this pay period (matches the rate used
+        // to compute result.taxes.coloradoSuta). Authoritative rate is reconciled at finalization.
+        const provisionalSuiRate = SuiRateService.getRateForDate(employer.id, payPeriodEnd);
+
         const res = this.run(`
             INSERT INTO payroll_records (
                 caregiver_id, employer_id, pay_period_start, pay_period_end, total_hours, 
@@ -180,7 +187,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             result.taxes.coloradoFamliEmployee,
             result.taxes.coloradoFamliEmployer,
             result.taxes.coloradoStateIncomeTax,
-            employer.coloradoSutaRate,
+            provisionalSuiRate.rate,
             result.taxes.coloradoSuta,
             result.calculationVersion,
             result.taxVersion,
@@ -246,6 +253,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             voidReason: row.void_reason,
             isLatePayment: row.is_late_payment === 1,
             i9Snapshot: row.i9_snapshot === 1,
+            serviceAddressSnapshot: row.service_address_snapshot,
             createdAt: row.created_at,
         };
     }
@@ -304,6 +312,38 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             throw new Error(`Check number "${checkNumber}" is already in use. Please enter a different check number.`);
         }
 
+        // Authoritative Colorado SUI rate resolved by PAYMENT DATE (D1=B). The create-time
+        // snapshot used the pay-period end as a provisional value; reconcile at finalization.
+        const suiRate = SuiRateService.getRateForDate(employer.id, paymentDate);
+        if (!suiRate.wageBaseConfirmed || !suiRate.wageBase) {
+            throw new Error(
+                `Colorado SUI wage base for ${new Date(paymentDate).getFullYear()} is not confirmed. ` +
+                `Enter the official CDLE taxable wage base before finalizing payroll.`
+            );
+        }
+        const payYear = new Date(paymentDate).getFullYear();
+        const periodYear = new Date(record.payPeriodEnd).getFullYear();
+        const suiNeedsRecompute = (suiRate.rate !== (record.employerSuiRate ?? 0)) || (payYear !== periodYear);
+
+        // Resolve the service/work address effective at the start of this pay period for the
+        // immutable snapshot (FR-07). Records that already carry a backfilled snapshot keep it.
+        let serviceAddressSnapshot: string | null = record.serviceAddressSnapshot || null;
+        if (!serviceAddressSnapshot) {
+            const addr = ServiceAddressService.getAddressForDate(record.caregiverId, record.payPeriodStart);
+            if (addr) {
+                serviceAddressSnapshot = ServiceAddressService.formatAddress(addr);
+            } else if (employer.serviceAddress) {
+                serviceAddressSnapshot = employer.serviceAddress;
+            } else {
+                const structured = [
+                    employer.addressLine1, employer.addressLine2,
+                    [employer.city, employer.state].filter(Boolean).join(', '),
+                    employer.zip
+                ].filter(Boolean).join(' ').trim();
+                serviceAddressSnapshot = structured || null;
+            }
+        }
+
         const db = getDatabase();
         const finalize = db.transaction(() => {
             if (pdfData) {
@@ -321,6 +361,35 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             }
 
             TimeEntryService.finalizeTimeEntries(record.caregiverId, record.payPeriodStart, record.payPeriodEnd);
+
+            // Reconcile SUI to the authoritative rate/wage base for the payment date (D1=B).
+            // SUI is an employer-paid expense, so net pay is unaffected; only employer tax columns change.
+            if (suiNeedsRecompute) {
+                const ytdRow = this.get<{ total: number }>(`
+                    SELECT SUM(gross_wages) as total
+                    FROM payroll_records
+                    WHERE caregiver_id = ? AND employer_id = ?
+                      AND is_finalized = 1 AND is_voided = 0
+                      AND substr(payment_date,1,4) = ? AND payment_date < ?
+                `, [record.caregiverId, record.employerId || employer.id, String(payYear), paymentDate]);
+                const ytdSuiBefore = ytdRow?.total || 0;
+                const remainingCap = Math.max(0, suiRate.wageBase - ytdSuiBefore);
+                const taxableWages = Math.min(record.grossWages, remainingCap);
+                const suiPaid = Math.round(taxableWages * suiRate.rate * 100) / 100;
+                this.run(`
+                    UPDATE payroll_records
+                    SET colorado_suta = ?, employer_sui_rate = ?, employer_sui_paid = ?
+                    WHERE id = ? AND employer_id = ?
+                `, [suiPaid, suiRate.rate, suiPaid, id, record.employerId || employer.id]);
+            }
+
+            // Persist the immutable service-address snapshot (FR-07).
+            if (serviceAddressSnapshot) {
+                this.run(
+                    'UPDATE payroll_records SET service_address_snapshot = ? WHERE id = ? AND employer_id = ?',
+                    [serviceAddressSnapshot, id, record.employerId || employer.id]
+                );
+            }
 
             const accruedHours = record.totalHours / 30;
             const yearStart = `${record.payPeriodEnd.substring(0, 4)}-01-01`;
@@ -462,6 +531,10 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
 
         const i9Snapshot = caregiver.i9CompletionDate ? 1 : 0;
 
+        // Snapshot the provisional SUI rate resolved for this pay period (matches the rate used
+        // to compute result.taxes.coloradoSuta). Authoritative rate is reconciled at finalization.
+        const provisionalSuiRate = SuiRateService.getRateForDate(employer.id, periodEnd);
+
         const res = this.run(`
             INSERT INTO payroll_records (
                 caregiver_id, employer_id, pay_period_start, pay_period_end,
@@ -500,7 +573,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             result.taxes.coloradoFamliEmployee,
             result.taxes.coloradoFamliEmployer,
             result.taxes.coloradoStateIncomeTax,
-            employer.coloradoSutaRate,
+            provisionalSuiRate.rate,
             result.taxes.coloradoSuta,
             result.calculationVersion,
             result.taxVersion,
@@ -676,6 +749,11 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
         if (!employer) throw new Error('Employer not found');
 
         // 3. Setup Tax Computer (FICA, FUTA, State)
+        // Resolve Colorado SUI rate by the pay period start (provisional for preview). Manual entries
+        // are finalized at creation, so the authoritative rate is resolved by payment date in
+        // createManualPayroll (mirroring the finalize-time recompute).
+        const manualSuiRate = SuiRateService.getRateForDate(employer.id, params.payPeriodStart);
+
         const taxRates: TaxRates = {
             ssRateEmployee: taxConfig.ssRateEmployee,
             ssRateEmployer: taxConfig.ssRateEmployer,
@@ -684,24 +762,12 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             medicareRateEmployer: taxConfig.medicareRateEmployer,
             futaRate: taxConfig.futaRate,
             futaWageBase: taxConfig.futaWageBase,
-            coloradoSutaRate: employer.coloradoSutaRate,
-            coloradoSutaCap: taxConfig.ssWageBase, // Using SS Base as proxy if SUTA specific not found, but it should be separate. TaxConfig usually has this? 
-            // Checked tax-configuration-service.ts, it DOES NOT have sutaWageBase field exposed in interface explicitly?
-            // Wait, checking line 14 above... Import was TaxConfigurationService.
-            // Checking TaxConfiguration interface: it has ssWageBase, medicareWageBase, futaWageBase.
-            // It does NOT have coloradoSutaWageBase. 
-            // Use standard CO base (e.g. 23800 for 2024/2025). 
-            // But TaxComputer expects coloradoSutaCap.
-            // Let's use ssWageBase as a safe fallback or 23800 hardcoded for now if missing.
-            // Actually TaxRates interface requires it.
+            coloradoSutaRate: manualSuiRate.rate,
+            coloradoSutaCap: manualSuiRate.wageBase,
             coloradoFamliRate: employer.coloradoFamliRateEE,
             coloradoFamliRateER: employer.coloradoFamliRateER,
             coloradoStateIncomeTaxRate: 0.044
         };
-
-        // Correct SUTA Cap logic: CO SUTA base is usually around $23,800. 
-        // TaxComputer likely expects this. For now I will map it to fixed value if not in config.
-        taxRates.coloradoSutaCap = 23800;
 
         const taxComputer = new TaxComputer(taxRates, taxConfig.id.toString());
         const taxResult = taxComputer.calculateTaxes(params.grossAmount, ytdGross);
@@ -791,6 +857,46 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             payPeriodStart: params.payPeriodStart,
         });
 
+        // 2b. Authoritative Colorado SUI resolved by payment date (manual entries are finalized at
+        // creation, so this mirrors the finalize-time recompute). SUI is employer-paid, so net pay is
+        // unaffected. Snapshots the rate onto the record (FR-03) and the service address (FR-07).
+        const manualPaymentDate = params.paymentDate || params.payPeriodEnd;
+        const manualSuiRate = SuiRateService.getRateForDate(params.employerId, manualPaymentDate);
+        if (!manualSuiRate.wageBaseConfirmed || !manualSuiRate.wageBase) {
+            throw new Error(
+                `Colorado SUI wage base for ${new Date(manualPaymentDate).getFullYear()} is not confirmed. ` +
+                `Enter the official CDLE taxable wage base before creating manual payroll.`
+            );
+        }
+        const manualYear = new Date(manualPaymentDate).getFullYear();
+        const manualYtdRow = db.prepare(`
+            SELECT SUM(gross_wages) as total
+            FROM payroll_records
+            WHERE caregiver_id = ? AND employer_id = ?
+              AND is_finalized = 1 AND is_voided = 0
+              AND substr(payment_date,1,4) = ? AND payment_date < ?
+        `).get(params.caregiverId, params.employerId, String(manualYear), manualPaymentDate) as { total: number } | undefined;
+        const manualYtdSuiBefore = manualYtdRow?.total || 0;
+        const manualRemainingCap = Math.max(0, manualSuiRate.wageBase - manualYtdSuiBefore);
+        const manualTaxableWages = Math.min(params.grossAmount, manualRemainingCap);
+        const manualSuiPaid = Math.round(manualTaxableWages * manualSuiRate.rate * 100) / 100;
+
+        // Resolve the service/work address snapshot (FR-07).
+        const manualAddr = ServiceAddressService.getAddressForDate(params.caregiverId, params.payPeriodStart);
+        const employerForAddr = EmployerService.getEmployer();
+        let manualAddrSnapshot: string | null = null;
+        if (manualAddr) {
+            manualAddrSnapshot = ServiceAddressService.formatAddress(manualAddr);
+        } else if (employerForAddr?.serviceAddress) {
+            manualAddrSnapshot = employerForAddr.serviceAddress;
+        } else if (employerForAddr) {
+            manualAddrSnapshot = [
+                employerForAddr.addressLine1, employerForAddr.addressLine2,
+                [employerForAddr.city, employerForAddr.state].filter(Boolean).join(', '),
+                employerForAddr.zip
+            ].filter(Boolean).join(' ').trim() || null;
+        }
+
         // 3. Transaction: Atomic DB State Change
         const createTransaction = db.transaction(() => {
             const result = db.prepare(`
@@ -800,12 +906,14 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
                     ss_employee, medicare_employee, federal_withholding,
                     ss_employer, medicare_employer, futa,
                     colorado_suta, colorado_famli_employee, colorado_famli_employer,
+                    employer_sui_rate, employer_sui_paid, service_address_snapshot,
                     calculation_version, tax_version, is_finalized, status,
                     entry_type, manual_description, manual_gross_amount,
                     payment_date, created_at, check_number
                 ) VALUES (
                     ?, ?, ?, ?,
                     0, ?, ?,
+                    ?, ?, ?,
                     ?, ?, ?,
                     ?, ?, ?,
                     ?, ?, ?,
@@ -826,9 +934,12 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
                 taxes.ssEmployer,
                 taxes.medicareEmployer,
                 taxes.futa,
-                taxes.coloradoSuta,
+                manualSuiPaid,
                 taxes.coloradoFamliEmployee,
                 taxes.coloradoFamliEmployer,
+                manualSuiRate.rate,
+                manualSuiPaid,
+                manualAddrSnapshot,
                 params.description,
                 params.grossAmount,
                 params.paymentDate || params.payPeriodEnd,

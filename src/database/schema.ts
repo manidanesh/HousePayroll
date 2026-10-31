@@ -135,6 +135,7 @@ export const SCHEMA = {
       is_late_payment INTEGER DEFAULT 0,
       i9_snapshot INTEGER DEFAULT 0,
       paystub_pdf BLOB,
+      service_address_snapshot TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (caregiver_id) REFERENCES caregivers(id),
       FOREIGN KEY (employer_id) REFERENCES employers(id)
@@ -204,6 +205,7 @@ export const SCHEMA = {
       action TEXT NOT NULL,
       changes_json TEXT,
       calculation_version TEXT,
+      actor TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (employer_id) REFERENCES employers(id)
     )
@@ -227,6 +229,41 @@ export const SCHEMA = {
       pin_hash TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
+  `,
+  employer_sui_rates: `
+    CREATE TABLE IF NOT EXISTS employer_sui_rates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employer_id INTEGER NOT NULL,
+      tax_year INTEGER NOT NULL,
+      effective_date TEXT NOT NULL,
+      ui_rate REAL NOT NULL,
+      annual_wage_base REAL,
+      wage_base_confirmed INTEGER DEFAULT 0,
+      source TEXT,
+      jurisdiction TEXT DEFAULT 'CO',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (employer_id) REFERENCES employers(id)
+    )
+  `,
+  service_addresses: `
+    CREATE TABLE IF NOT EXISTS service_addresses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employer_id INTEGER NOT NULL,
+      caregiver_id INTEGER NOT NULL,
+      address_line1 TEXT,
+      address_line2 TEXT,
+      city TEXT,
+      state TEXT,
+      zip TEXT,
+      effective_start TEXT NOT NULL,
+      effective_end TEXT,
+      reason TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by TEXT,
+      FOREIGN KEY (employer_id) REFERENCES employers(id),
+      FOREIGN KEY (caregiver_id) REFERENCES caregivers(id)
+    )
   `
 };
 
@@ -240,5 +277,8 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_time_entries_finalized ON time_entries(is_finalized)`,
   `CREATE INDEX IF NOT EXISTS idx_payments_payroll_id ON payments(payroll_record_id)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_audit_log_record ON audit_log(table_name, record_id)`
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_record ON audit_log(table_name, record_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_employer_sui_rates_emp_year ON employer_sui_rates(employer_id, tax_year)`,
+  `CREATE INDEX IF NOT EXISTS idx_employer_sui_rates_eff ON employer_sui_rates(employer_id, effective_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_service_addr_caregiver_eff ON service_addresses(caregiver_id, effective_start)`
 ];

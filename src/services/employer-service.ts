@@ -2,7 +2,7 @@
  * EmployerService - Manages employer profile operations
  */
 
-import { getDatabase, encrypt, decrypt } from '../database/db';
+import { getDatabase, encrypt, decrypt, DECRYPTION_FAILED_SENTINEL } from '../database/db';
 import { BaseRepository } from '../core/base-repository';
 import { AuditService } from './audit-service';
 
@@ -254,7 +254,7 @@ export class EmployerService extends BaseRepository<Employer> {
             updates.push('display_name = ?');
             values.push(data.displayName);
         }
-        if (data.ssnOrEin !== undefined) {
+        if (data.ssnOrEin !== undefined && data.ssnOrEin !== DECRYPTION_FAILED_SENTINEL && data.ssnOrEin !== '') {
             updates.push('ssn_or_ein_encrypted = ?');
             values.push(encrypt(data.ssnOrEin));
         }
@@ -314,15 +314,15 @@ export class EmployerService extends BaseRepository<Employer> {
             updates.push('service_address = ?');
             values.push(data.serviceAddress);
         }
-        if (data.stripePublishableKey !== undefined) {
+        if (data.stripePublishableKey !== undefined && data.stripePublishableKey !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('stripe_publishable_key_enc = ?');
             values.push(data.stripePublishableKey ? encrypt(data.stripePublishableKey) : null);
         }
-        if (data.stripeSecretKey !== undefined) {
+        if (data.stripeSecretKey !== undefined && data.stripeSecretKey !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('stripe_secret_key_enc = ?');
             values.push(data.stripeSecretKey ? encrypt(data.stripeSecretKey) : null);
         }
-        if (data.stripeAccountId !== undefined) {
+        if (data.stripeAccountId !== undefined && data.stripeAccountId !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('stripe_account_id_enc = ?');
             values.push(data.stripeAccountId ? encrypt(data.stripeAccountId) : null);
         }
@@ -334,11 +334,11 @@ export class EmployerService extends BaseRepository<Employer> {
             updates.push('masked_funding_account = ?');
             values.push(data.maskedFundingAccount);
         }
-        if (data.fein !== undefined) {
+        if (data.fein !== undefined && data.fein !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('fein_enc = ?');
             values.push(data.fein ? encrypt(data.fein) : null);
         }
-        if (data.uiAccountNumber !== undefined) {
+        if (data.uiAccountNumber !== undefined && data.uiAccountNumber !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('ui_account_number_enc = ?');
             values.push(data.uiAccountNumber ? encrypt(data.uiAccountNumber) : null);
         }
@@ -354,11 +354,11 @@ export class EmployerService extends BaseRepository<Employer> {
             updates.push('wc_acknowledged = ?');
             values.push(data.wcAcknowledged ? 1 : 0);
         }
-        if (data.wcCarrier !== undefined) {
+        if (data.wcCarrier !== undefined && data.wcCarrier !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('wc_carrier_enc = ?');
             values.push(data.wcCarrier ? encrypt(data.wcCarrier) : null);
         }
-        if (data.wcPolicyNumber !== undefined) {
+        if (data.wcPolicyNumber !== undefined && data.wcPolicyNumber !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('wc_policy_number_enc = ?');
             values.push(data.wcPolicyNumber ? encrypt(data.wcPolicyNumber) : null);
         }
@@ -404,7 +404,8 @@ export class EmployerService extends BaseRepository<Employer> {
             this.run('DELETE FROM payroll_records WHERE employer_id = ?', [id]);
             this.run('DELETE FROM time_entries WHERE employer_id = ?', [id]);
             this.run('DELETE FROM caregivers WHERE employer_id = ?', [id]);
-            this.run('DELETE FROM audit_log WHERE employer_id = ?', [id]);
+            // Audit records are immutable (FR-08): the audit trail is retained even when an
+            // employer is deleted, so history can always be reconstructed.
             this.run('DELETE FROM employers WHERE id = ?', [id]);
         })();
     }

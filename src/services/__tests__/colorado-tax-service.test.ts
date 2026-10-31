@@ -42,6 +42,7 @@ describe('ColoradoTaxService', () => {
 
     describe('generateSUI_CSV', () => {
         it('should generate correct CSV format', () => {
+            // The CSV now derives taxable wages and SUI due from per-record snapshots (FR-03).
             const mockData = [{
                 caregiverId: 1,
                 caregiverName: 'Mary Poppins',
@@ -51,7 +52,9 @@ describe('ColoradoTaxService', () => {
                 hoursWorked: 200,
                 eeContribution: 22.5,
                 erContribution: 22.5,
-                references: '101; 102'
+                references: '101; 102',
+                suiTaxable: 5000, // all 5000 subject to SUI (under the wage base)
+                suiPaid: 85.00,    // 5000 * 0.017
             }];
 
             const csv = service.generateSUI_CSV('EAN123', 'FEIN123', 1, 2025, mockData);
@@ -59,12 +62,7 @@ describe('ColoradoTaxService', () => {
             expect(csv).toContain('FEIN,EAN,Quarter,Year');
             expect(csv).toContain('Poppins,Mary');
             expect(csv).toContain('5000.00'); // Total Wages
-
-            // Taxable calculation: 
-            // Wage Base 16000. Prior 10000. Total 5000. 
-            // All 5000 is taxable.
-            // SUI Due = 5000 * 0.017 (rate from setup) = 85.00
-            expect(csv).toContain('85.00');
+            expect(csv).toContain('85.00');    // SUI Tax Due (from snapshot)
         });
     });
 });

@@ -5,14 +5,20 @@ import { Employer, TaxConfiguration } from '../../types';
 import AuditLog from './AuditLog';
 import SuccessModal from './SuccessModal';
 import TaxConfigurationSettings from './TaxConfigurationSettings';
+import SuiRateSettings from './SuiRateSettings';
 import { ExportBackupDialog } from './ExportBackupDialog';
 import { ImportBackupDialog } from './ImportBackupDialog';
+
+/** Matches the main-process decrypt() sentinel so the renderer can detect
+ *  values that failed to decrypt (e.g. after an encryption-key recovery). */
+const DECRYPTION_FAILED = '*** DECRYPTION FAILED ***';
 
 const Settings: React.FC = () => {
     const [employer, setEmployer] = useState<Employer | null>(null);
     const [editing, setEditing] = useState(false);
     const [formData, setFormData] = useState({
         displayName: '',
+        ssnOrEin: '',
         childName: '',
         payFrequency: 'bi-weekly',
         defaultHourlyRate: '0.00',
@@ -33,8 +39,6 @@ const Settings: React.FC = () => {
         maskedFundingAccount: '',
         fein: '',
         uiAccountNumber: '',
-        suiWageBase: '16000',
-        suiEffectiveDate: '',
         wcAcknowledged: false,
         wcCarrier: '',
         wcPolicyNumber: '',
@@ -96,6 +100,7 @@ const Settings: React.FC = () => {
                 setEmployer(data);
                 setFormData({
                     displayName: data.displayName || '',
+                    ssnOrEin: data.ssnOrEin && data.ssnOrEin !== DECRYPTION_FAILED ? data.ssnOrEin : '',
                     childName: data.childName || '',
                     payFrequency: data.payFrequency || 'bi-weekly',
                     defaultHourlyRate: data.defaultHourlyRate ? data.defaultHourlyRate.toFixed(2) : '0.00',
@@ -116,8 +121,6 @@ const Settings: React.FC = () => {
                     maskedFundingAccount: data.maskedFundingAccount || '',
                     fein: data.fein || '',
                     uiAccountNumber: data.uiAccountNumber || '',
-                    suiWageBase: data.suiWageBase ? data.suiWageBase.toString() : '16000',
-                    suiEffectiveDate: data.suiEffectiveDate || '',
                     wcAcknowledged: !!data.wcAcknowledged,
                     wcCarrier: data.wcCarrier || '',
                     wcPolicyNumber: data.wcPolicyNumber || '',
@@ -178,13 +181,6 @@ const Settings: React.FC = () => {
             return;
         }
 
-        const wageBase = parseFloat(formData.suiWageBase);
-        if (isNaN(wageBase) || wageBase < 0) {
-            setError('SUI Wage Base must be a positive number');
-            setLoading(false);
-            return;
-        }
-
         if (!formData.displayName.trim()) {
             setError('Display name is required');
             setLoading(false);
@@ -206,6 +202,7 @@ const Settings: React.FC = () => {
         try {
             await ipcAPI.employer.update({
                 displayName: formData.displayName,
+                ssnOrEin: formData.ssnOrEin,
                 childName: formData.childName,
                 payFrequency: formData.payFrequency as any,
                 defaultHourlyRate: hourlyRate,
@@ -226,8 +223,6 @@ const Settings: React.FC = () => {
                 maskedFundingAccount: formData.maskedFundingAccount,
                 fein: formData.fein,
                 uiAccountNumber: formData.uiAccountNumber,
-                suiWageBase: wageBase,
-                suiEffectiveDate: formData.suiEffectiveDate,
                 wcAcknowledged: formData.wcAcknowledged,
                 wcCarrier: formData.wcCarrier,
                 wcPolicyNumber: formData.wcPolicyNumber,
@@ -429,6 +424,10 @@ const Settings: React.FC = () => {
                                 <span>{employer.displayName}</span>
                             </div>
                             <div className="info-item">
+                                <label>SSN / EIN:</label>
+                                <span>{employer.ssnOrEin && employer.ssnOrEin !== DECRYPTION_FAILED ? '•••••••••' : 'Not set'}</span>
+                            </div>
+                            <div className="info-item">
                                 <label>Pay Frequency:</label>
                                 <span style={{ textTransform: 'capitalize' }}>{employer.payFrequency}</span>
                             </div>
@@ -489,14 +488,8 @@ const Settings: React.FC = () => {
                             <label>UI Account Number:</label>
                             <span className="setting-value">{employer.uiAccountNumber ? '••••••••' : 'Not set'}</span>
                         </div>
-                        <div className="setting-row">
-                            <label>SUI Wage Base:</label>
-                            <span className="setting-value">${employer.suiWageBase.toLocaleString()}</span>
-                        </div>
-                        <div className="setting-row">
-                            <label>Rate Effective Date:</label>
-                            <span className="setting-value">{employer.suiEffectiveDate || 'Not set'}</span>
-                        </div>
+
+                        <SuiRateSettings />
 
                         <div className="setting-row" style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '10px' }}>
                             <label>Address:</label>
@@ -604,6 +597,18 @@ const Settings: React.FC = () => {
                                 />
                                 <small>Used in paystub header: "Caregiving Services for [Name]"</small>
                             </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Employer SSN or EIN</label>
+                            <input
+                                type="password"
+                                value={formData.ssnOrEin}
+                                onChange={(e) => setFormData({ ...formData, ssnOrEin: e.target.value })}
+                                className="form-input"
+                                placeholder="123-45-6789 or 12-3456789"
+                            />
+                            <small>Your SSN or EIN, used on W-2/W-3 tax forms. Leave blank to keep the current value.</small>
                         </div>
 
                         <h4 style={{ margin: '20px 0 10px' }}>Paystub Customization</h4>
@@ -776,29 +781,6 @@ const Settings: React.FC = () => {
                                     placeholder="e.g. 06327814"
                                 />
                                 <small>8-digit State UI Account Number</small>
-                            </div>
-                        </div>
-
-                        <div className="form-grid-2">
-                            <div className="form-group">
-                                <label>SUI Wage Base *</label>
-                                <input
-                                    type="number"
-                                    step="1"
-                                    value={formData.suiWageBase}
-                                    onChange={(e) => setFormData({ ...formData, suiWageBase: e.target.value })}
-                                    className="form-input"
-                                />
-                                <small>Default: $16,000</small>
-                            </div>
-                            <div className="form-group">
-                                <label>Rate Effective Date</label>
-                                <input
-                                    type="date"
-                                    value={formData.suiEffectiveDate}
-                                    onChange={(e) => setFormData({ ...formData, suiEffectiveDate: e.target.value })}
-                                    className="form-input"
-                                />
                             </div>
                         </div>
 

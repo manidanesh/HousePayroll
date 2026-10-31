@@ -64,6 +64,12 @@ const PayrollDetail: React.FC<PayrollDetailProps> = ({ recordId, onBack }) => {
     const { record, ytd } = context;
     const f = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
+    // Prefer the immutable service-address snapshot for finalized paystubs (FR-07); otherwise
+    // show the employer's current address.
+    const addressDisplay = record.serviceAddressSnapshot
+        || [employer.addressLine1, employer.addressLine2, [employer.city, employer.state].filter(Boolean).join(', '), employer.zip]
+            .filter(Boolean).join(' ').trim();
+
     return (
         <div className="payroll-detail">
             <div className="detail-header">
@@ -90,11 +96,8 @@ const PayrollDetail: React.FC<PayrollDetailProps> = ({ recordId, onBack }) => {
                 <div className="paystub-header-info" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
                     <div>
                         <h4>{employer.displayName}</h4>
-                        {employer.addressLine1 && <div className="text-muted">{employer.addressLine1}</div>}
-                        {(employer.city || employer.state || employer.zip) && (
-                            <div className="text-muted">
-                                {[employer.city, employer.state].filter(Boolean).join(', ')} {employer.zip || ''}
-                            </div>
+                        {addressDisplay && (
+                            <div className="text-muted" style={{ whiteSpace: 'pre-line' }}>{addressDisplay}</div>
                         )}
                     </div>
                     <div style={{ textAlign: 'right' }}>

@@ -10,6 +10,8 @@ import { getDatabase } from '../database/db';
 import { AuthService } from '../services/auth-service';
 import { EmployerService } from '../services/employer-service';
 import { CaregiverService } from '../services/caregiver-service';
+import { ServiceAddressService } from '../services/service-address-service';
+import { SuiRateService } from '../services/sui-rate-service';
 import { TimeEntryService } from '../services/time-entry-service';
 
 import { PayrollService } from '../services/payroll-service';
@@ -133,6 +135,62 @@ export function registerIpcHandlers() {
 
     ipcMain.handle('caregiver:delete', (_event, id: number) => {
         return CaregiverService.deleteCaregiver(id);
+    });
+
+    // Service / Work address handlers (versioned, effective-dated history per caregiver)
+    ipcMain.handle('serviceAddress:change', (_event, data: any) => {
+        try {
+            return ServiceAddressService.changeAddress(data);
+        } catch (err: any) {
+            logger.error('Failed to change service address', err, { caregiverId: data?.caregiverId });
+            throw err;
+        }
+    });
+
+    ipcMain.handle('serviceAddress:getForDate', (_event, caregiverId: number, date: string) => {
+        return ServiceAddressService.getAddressForDate(caregiverId, date);
+    });
+
+    ipcMain.handle('serviceAddress:getCurrent', (_event, caregiverId: number) => {
+        return ServiceAddressService.getCurrentAddress(caregiverId);
+    });
+
+    ipcMain.handle('serviceAddress:getHistory', (_event, caregiverId: number) => {
+        return ServiceAddressService.getAddressHistory(caregiverId);
+    });
+
+    ipcMain.handle('serviceAddress:getAffectedDrafts', (_event, caregiverId: number, fromDate: string) => {
+        return ServiceAddressService.getAffectedDraftRecords(caregiverId, fromDate);
+    });
+
+    // Colorado SUI rate configuration handlers (employer-specific, effective-dated)
+    ipcMain.handle('suiRate:getAll', () => {
+        const employer = EmployerService.getEmployer();
+        if (!employer) return [];
+        return SuiRateService.getAllRates(employer.id);
+    });
+
+    ipcMain.handle('suiRate:getForDate', (_event, date: string) => {
+        const employer = EmployerService.getEmployer();
+        if (!employer) return null;
+        return SuiRateService.getRateForDate(employer.id, date);
+    });
+
+    ipcMain.handle('suiRate:getForYear', (_event, year: number) => {
+        const employer = EmployerService.getEmployer();
+        if (!employer) return null;
+        return SuiRateService.getRateForYear(employer.id, year);
+    });
+
+    ipcMain.handle('suiRate:upsert', (_event, data: any) => {
+        try {
+            const employer = EmployerService.getEmployer();
+            if (!employer) throw new Error('No active employer found');
+            return SuiRateService.upsertRate({ ...data, employerId: employer.id });
+        } catch (err: any) {
+            logger.error('Failed to upsert SUI rate', err, { data });
+            throw err;
+        }
     });
 
     // Time entry handlers
@@ -279,6 +337,14 @@ export function registerIpcHandlers() {
         // 3. Get employer-specific rates
         const employer = EmployerService.getEmployer();
 
+        // Resolve the Colorado SUI rate effective for this pay period. This is a
+        // PROVISIONAL rate for display; the authoritative rate is re-resolved by the
+        // payment date at finalization (see PayrollService.finalizePayroll).
+        const { SuiRateService } = require('../services/sui-rate-service');
+        const suiRate = employer
+            ? SuiRateService.getRateForDate(employer.id, input.payPeriodEnd || new Date().toISOString().slice(0, 10))
+            : { rate: 0, wageBase: 16000, wageBaseConfirmed: true };
+
         const rates: any = {
             ssRateEmployee: taxConfig.ssRateEmployee,
             ssRateEmployer: taxConfig.ssRateEmployer,
@@ -288,8 +354,8 @@ export function registerIpcHandlers() {
             medicareWageBase: taxConfig.medicareWageBase,
             futaRate: taxConfig.futaRate,
             futaWageBase: taxConfig.futaWageBase,
-            coloradoSutaRate: employer?.coloradoSutaRate || 0,
-            coloradoSutaCap: employer?.suiWageBase || 16000,
+            coloradoSutaRate: suiRate.rate,
+            coloradoSutaCap: suiRate.wageBase,
             coloradoFamliRate: employer?.coloradoFamliRateEE || 0.0044,
             coloradoFamliRateER: employer?.coloradoFamliRateER || 0.0044
         };
@@ -351,11 +417,18 @@ export function registerIpcHandlers() {
     // Payroll review workflow handlers
     ipcMain.handle('payroll:preview', async (event, input: PayrollCalculationInput) => {
         const { TaxConfigurationService } = require('../services/tax-configuration-service');
-        const taxConfig = TaxConfigurationService.getConfigForYear(new Date().getFullYear());
+        const { SuiRateService } = require('../services/sui-rate-service');
+        // Resolve the tax year from the pay period end (not today's date) so cross-year
+        // periods select the correct configuration.
+        const payYear = input.payPeriodEnd ? new Date(input.payPeriodEnd).getFullYear() : new Date().getFullYear();
+        const taxConfig = TaxConfigurationService.getConfigForYear(payYear);
         if (!taxConfig) throw new Error('Tax configuration not found');
 
         const employer = EmployerService.getEmployer();
         if (!employer) throw new Error('Employer not found');
+
+        // Provisional SUI rate by pay-period end (authoritative rate resolved at finalization).
+        const suiRate = SuiRateService.getRateForDate(employer.id, input.payPeriodEnd || new Date().toISOString().slice(0, 10));
 
         const rates = {
             ssRateEmployee: taxConfig.ssRateEmployee,
@@ -365,8 +438,8 @@ export function registerIpcHandlers() {
             medicareRateEmployer: taxConfig.medicareRateEmployer,
             futaRate: taxConfig.futaRate,
             futaWageBase: taxConfig.futaWageBase,
-            coloradoSutaRate: employer.coloradoSutaRate,
-            coloradoSutaCap: 16000,
+            coloradoSutaRate: suiRate.rate,
+            coloradoSutaCap: suiRate.wageBase,
             coloradoFamliRate: employer.coloradoFamliRateEE,
             coloradoFamliRateER: employer.coloradoFamliRateER,
         };

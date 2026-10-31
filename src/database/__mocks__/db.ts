@@ -43,7 +43,8 @@ export function resetTestDatabase(): void {
 
         const tables = [
             'caregivers', 'employers', 'time_entries', 'payroll_records',
-            'payments', 'payment_transactions', 'audit_log', 'export_logs'
+            'payments', 'payment_transactions', 'audit_log', 'export_logs',
+            'employer_sui_rates', 'service_addresses'
         ];
 
         tables.forEach(table => {

@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
             // Caregiver
             'caregiver:create', 'caregiver:getAll', 'caregiver:getById',
             'caregiver:update', 'caregiver:deactivate', 'caregiver:reactivate', 'caregiver:delete',
+            // Service / Work Address (versioned history, per caregiver)
+            'serviceAddress:change', 'serviceAddress:getForDate', 'serviceAddress:getCurrent',
+            'serviceAddress:getHistory', 'serviceAddress:getAffectedDrafts',
+            // Colorado SUI rate configuration (employer-specific, effective-dated)
+            'suiRate:getAll', 'suiRate:getForDate', 'suiRate:getForYear', 'suiRate:upsert',
             // Time Entry
             'timeEntry:create', 'timeEntry:getById', 'timeEntry:getForDateRange',
             'timeEntry:getForCaregiver', 'timeEntry:getForDate', 'timeEntry:update', 'timeEntry:delete',

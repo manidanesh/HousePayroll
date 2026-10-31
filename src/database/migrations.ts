@@ -357,6 +357,124 @@ export const migrations: Migration[] = [
             try { db.exec('ALTER TABLE payroll_records ADD COLUMN check_bank_name TEXT'); } catch { }
             try { db.exec('ALTER TABLE payroll_records ADD COLUMN check_account_owner TEXT'); } catch { }
         }
+    },
+    {
+        version: 13,
+        name: 'Effective-Dated SUI Rates & Service Address History',
+        up: (db: Database) => {
+            // ── 1. Employer-specific, effective-dated Colorado SUI rate history ──
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS employer_sui_rates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employer_id INTEGER NOT NULL,
+                    tax_year INTEGER NOT NULL,
+                    effective_date TEXT NOT NULL,
+                    ui_rate REAL NOT NULL,
+                    annual_wage_base REAL,
+                    wage_base_confirmed INTEGER DEFAULT 0,
+                    source TEXT,
+                    jurisdiction TEXT DEFAULT 'CO',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (employer_id) REFERENCES employers(id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_employer_sui_rates_emp_year
+                    ON employer_sui_rates(employer_id, tax_year);
+                CREATE INDEX IF NOT EXISTS idx_employer_sui_rates_eff
+                    ON employer_sui_rates(employer_id, effective_date);
+            `);
+
+            // ── 2. Versioned service / work-location address history ──
+            // Distinct from the employer's mailing address and the caregiver's residential address.
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS service_addresses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employer_id INTEGER NOT NULL,
+                    caregiver_id INTEGER NOT NULL,
+                    address_line1 TEXT,
+                    address_line2 TEXT,
+                    city TEXT,
+                    state TEXT,
+                    zip TEXT,
+                    effective_start TEXT NOT NULL,
+                    effective_end TEXT,
+                    reason TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT,
+                    FOREIGN KEY (employer_id) REFERENCES employers(id),
+                    FOREIGN KEY (caregiver_id) REFERENCES caregivers(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_service_addr_caregiver_eff
+                    ON service_addresses(caregiver_id, effective_start);
+            `);
+
+            // ── 3. Immutable service-address snapshot on payroll records (FR-07) ──
+            try { db.exec('ALTER TABLE payroll_records ADD COLUMN service_address_snapshot TEXT'); } catch { }
+
+            // ── 4. Audit actor column (single-user app; 'employer'/'system') ──
+            try { db.exec('ALTER TABLE audit_log ADD COLUMN actor TEXT'); } catch { }
+
+            // ── 5. Seed SUI rate rows for the active employer ──
+            const employer = db.prepare(
+                'SELECT id, colorado_suta_rate, sui_wage_base, sui_effective_date FROM employers WHERE is_active = 1 LIMIT 1'
+            ).get() as { id: number; colorado_suta_rate: number | null; sui_wage_base: number | null; sui_effective_date: string | null } | undefined;
+
+            if (employer) {
+                // 2026: keep the employer's current rate (1.7% per D2); official wage base $30,600 (CDLE).
+                const has2026 = db.prepare('SELECT id FROM employer_sui_rates WHERE employer_id = ? AND tax_year = 2026').get(employer.id);
+                if (!has2026) {
+                    db.prepare(
+                        `INSERT INTO employer_sui_rates
+                            (employer_id, tax_year, effective_date, ui_rate, annual_wage_base, wage_base_confirmed, source, jurisdiction)
+                         VALUES (?, 2026, ?, ?, 30600.0, 1, 'CDLE official taxable wage base; rate retained from employer profile', 'CO')`
+                    ).run(employer.id, employer.sui_effective_date || '2026-01-01', employer.colorado_suta_rate ?? 0);
+                }
+                // 2027: 3.17% effective 2027-01-01; official wage base $32,100 per CESA (CDLE).
+                const has2027 = db.prepare('SELECT id FROM employer_sui_rates WHERE employer_id = ? AND tax_year = 2027').get(employer.id);
+                if (!has2027) {
+                    db.prepare(
+                        `INSERT INTO employer_sui_rates
+                            (employer_id, tax_year, effective_date, ui_rate, annual_wage_base, wage_base_confirmed, source, jurisdiction)
+                         VALUES (?, 2027, '2027-01-01', 0.0317, 32100.0, 1, 'CDLE rate notice / CESA wage base', 'CO')`
+                    ).run(employer.id);
+                }
+            }
+
+            // ── 6. Seed the first service-address version for each caregiver from the current employer address ──
+            const addrEmp = employer
+                ? db.prepare('SELECT id, service_address, address_line1, address_line2, city, state, zip FROM employers WHERE id = ?').get(employer.id) as any
+                : db.prepare('SELECT id, service_address, address_line1, address_line2, city, state, zip FROM employers ORDER BY is_active DESC, id ASC LIMIT 1').get() as any;
+
+            const caregivers = db.prepare('SELECT id, employer_id FROM caregivers').all() as { id: number; employer_id: number | null }[];
+            if (addrEmp) {
+                for (const cg of caregivers) {
+                    const exists = db.prepare('SELECT id FROM service_addresses WHERE caregiver_id = ?').get(cg.id);
+                    if (exists) continue;
+                    db.prepare(
+                        `INSERT INTO service_addresses
+                            (employer_id, caregiver_id, address_line1, address_line2, city, state, zip, effective_start, effective_end, reason, created_by)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, '2026-01-01', NULL, 'Migrated from employer service address', 'system')`
+                    ).run(cg.employer_id || addrEmp.id, cg.id, addrEmp.address_line1 || null, addrEmp.address_line2 || null, addrEmp.city || null, addrEmp.state || null, addrEmp.zip || null);
+                }
+            }
+
+            // ── 7. Backfill service_address_snapshot onto existing records so historical paystubs are immutable ──
+            // Use the employer's current service_address (free text) if set, else structured fields, so existing
+            // paystubs continue to show exactly what they showed before the change.
+            if (addrEmp) {
+                const structured = [
+                    addrEmp.address_line1,
+                    addrEmp.address_line2,
+                    [addrEmp.city, addrEmp.state].filter(Boolean).join(', '),
+                    addrEmp.zip
+                ].filter(Boolean).join(' ').trim();
+                const snapshotText = (addrEmp.service_address || structured || '').trim();
+                if (snapshotText) {
+                    db.prepare('UPDATE payroll_records SET service_address_snapshot = ? WHERE service_address_snapshot IS NULL')
+                        .run(snapshotText);
+                }
+            }
+        }
     }
 ];
 

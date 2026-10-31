@@ -2,7 +2,7 @@
  * CaregiverService - Manages caregiver profile operations
  */
 
-import { getDatabase, encrypt, decrypt } from '../database/db';
+import { getDatabase, encrypt, decrypt, DECRYPTION_FAILED_SENTINEL } from '../database/db';
 import { BaseRepository } from '../core/base-repository';
 import { Caregiver, CreateCaregiverInput, UpdateCaregiverInput, RendererSafeCaregiver } from '../types';
 import { AuditService } from './audit-service';
@@ -156,7 +156,7 @@ export class CaregiverService extends BaseRepository<Caregiver> {
             updates.push('full_legal_name = ?');
             values.push(data.fullLegalName);
         }
-        if (data.ssn !== undefined) {
+        if (data.ssn !== undefined && data.ssn !== DECRYPTION_FAILED_SENTINEL) {
             updates.push('ssn_encrypted = ?');
             values.push(encrypt(data.ssn));
         }

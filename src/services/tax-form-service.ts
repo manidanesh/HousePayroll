@@ -12,7 +12,7 @@ import { getDatabase, decrypt } from '../database/db';
 import { EmployerService } from './employer-service';
 import { CaregiverService } from './caregiver-service';
 import { ReportingService } from './reporting-service';
-import { W2Service } from './w2-service';
+import { W2OfficialService } from './w2-official-service';
 import { TaxPaymentService } from './tax-payment-service';
 import { Caregiver } from '../types';
 
@@ -52,7 +52,7 @@ export class TaxFormService {
             ssnOrEin: decrypt(employer.ssnOrEin),
         };
 
-        return W2Service.generateW2Buffer(year, decryptedCaregiver, decryptedEmployer as any);
+        return W2OfficialService.generateW2Buffer(year, decryptedCaregiver, decryptedEmployer as any);
     }
 
     /** Generate W-2 PDFs for ALL active caregivers, returns array of { name, buffer } */
@@ -70,7 +70,7 @@ export class TaxFormService {
         for (const cg of caregivers) {
             try {
                 const decryptedCg: Caregiver = { ...cg, ssn: decrypt(cg.ssn) };
-                const buffer = await W2Service.generateW2Buffer(year, decryptedCg, decryptedEmployer as any);
+                const buffer = await W2OfficialService.generateW2Buffer(year, decryptedCg, decryptedEmployer as any);
                 results.push({ caregiverName: cg.fullLegalName, buffer });
                 TaxFormService.logGeneration('W2', year, cg.id, cg.fullLegalName);
             } catch (err) {

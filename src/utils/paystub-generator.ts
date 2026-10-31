@@ -70,9 +70,11 @@ export class PaystubGenerator {
         doc.setFont('helvetica', 'normal');
         doc.text(employer.displayName, leftColX, metadataY + 5);
 
-        if (employer.serviceAddress) {
-            // Use custom service address if provided
-            const addrLines = doc.splitTextToSize(employer.serviceAddress, 100);
+        // Prefer the immutable service-address snapshot for finalized paystubs (FR-07),
+        // falling back to the employer's current service address, then the household address.
+        const addressForPaystub = record.serviceAddressSnapshot || employer.serviceAddress;
+        if (addressForPaystub) {
+            const addrLines = doc.splitTextToSize(addressForPaystub, 100);
             doc.text(addrLines, leftColX, metadataY + 10);
         } else {
             // Fallback to household address

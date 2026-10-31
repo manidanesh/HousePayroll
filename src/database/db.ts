@@ -19,58 +19,114 @@ const getKeyPathEnc = () => path.join(getDataDir(), '.key.enc');
 let ENCRYPTION_KEY: string | null = null;
 
 /**
+ * Sentinel value returned by decrypt() when a value can no longer be decrypted
+ * (e.g. after the encryption key is regenerated). Services use this to avoid
+ * persisting the sentinel back over existing ciphertext on update.
+ */
+export const DECRYPTION_FAILED_SENTINEL = '*** DECRYPTION FAILED ***';
+
+/**
+ * Generates a fresh 256-bit encryption key, persists it via OS-native secure
+ * storage, and returns the plaintext key.
+ */
+function generateAndStoreKey(keyPathEnc: string): string {
+  const plain = crypto.randomBytes(32).toString('hex');
+  const encrypted = safeStorage.encryptString(plain);
+  fs.writeFileSync(keyPathEnc, encrypted, { mode: 0o600 });
+  return plain;
+}
+
+/**
  * Loads the database encryption key using OS-native secure storage.
- * SECURITY: No fallback to weak keys - fails fast if secure storage unavailable.
+ *
+ * SECURITY: No fallback to weak keys.
+ *
+ * Recovery: if the stored key can no longer be decrypted by safeStorage (which
+ * happens on macOS when the Keychain entry used by safeStorage is regenerated —
+ * keychain reset, app re-signed with a different identity, OS keychain sync
+ * issue, or the keychain item was deleted and recreated), we regenerate a fresh
+ * key instead of crashing. Previously-encrypted DB columns become unreadable
+ * and must be re-entered, but the app remains usable.
+ *
+ * For any OTHER failure (e.g. secure storage unavailable, keychain locked), we
+ * still fail fast so the user can retry rather than silently losing data.
  */
 function loadEncryptionKey(): string {
   if (ENCRYPTION_KEY) return ENCRYPTION_KEY;
 
-  try {
-    const keyPathEnc = getKeyPathEnc();
-    const keyPath = getKeyPath();
+  const keyPathEnc = getKeyPathEnc();
+  const keyPath = getKeyPath();
 
-    // Require OS-native secure storage
-    if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error(
-        'Secure storage is not available on this system. ' +
-        'Cannot safely store encryption key. ' +
-        'Please ensure your operating system supports secure credential storage.'
-      );
-    }
-
-    // Load from encrypted storage
-    if (fs.existsSync(keyPathEnc)) {
-      const encrypted = fs.readFileSync(keyPathEnc);
-      ENCRYPTION_KEY = safeStorage.decryptString(encrypted);
-    } else {
-      // Generate new strong key
-      const plain = crypto.randomBytes(32).toString('hex');
-      const encrypted = safeStorage.encryptString(plain);
-      fs.writeFileSync(keyPathEnc, encrypted, { mode: 0o600 });
-      ENCRYPTION_KEY = plain;
-    }
-
-    // Remove legacy plain text key if it exists (security migration)
-    if (fs.existsSync(keyPath)) {
-      fs.unlinkSync(keyPath);
-      logger.info('Removed legacy plain text encryption key');
-    }
-
-    // Validate key strength
-    if (ENCRYPTION_KEY.length < 64) {
-      throw new Error('Encryption key is too short (minimum 64 characters required)');
-    }
-
-    return ENCRYPTION_KEY;
-  } catch (err: any) {
-    // SECURITY: Fail fast - do not use weak fallback keys
-    logger.error('CRITICAL: Failed to load encryption key', err);
+  // Require OS-native secure storage
+  if (!safeStorage.isEncryptionAvailable()) {
     throw new Error(
       'Cannot initialize database encryption. ' +
-      'This is a critical security error. ' +
-      'Please contact support. Error: ' + err.message
+      'Secure storage is not available on this system, so the encryption key cannot be safely stored. ' +
+      'Please ensure your operating system supports secure credential storage.'
     );
   }
+
+  if (fs.existsSync(keyPathEnc)) {
+    try {
+      const encrypted = fs.readFileSync(keyPathEnc);
+      const plain = safeStorage.decryptString(encrypted);
+
+      // Validate key strength
+      if (plain.length < 64) {
+        throw new Error('Encryption key is too short (minimum 64 characters required)');
+      }
+
+      ENCRYPTION_KEY = plain;
+    } catch (err: any) {
+      // Only the safeStorage key-mismatch case is recoverable. Detect it by the
+      // distinctive error message Electron throws from decryptString.
+      const isKeyMismatch = /decrypting the ciphertext/i.test(err?.message ?? '');
+
+      if (!isKeyMismatch) {
+        // Genuine safeStorage failure (e.g. keychain locked) — do NOT silently
+        // regenerate and discard a potentially-recoverable key. Fail fast.
+        logger.error('CRITICAL: Failed to load encryption key', err);
+        throw new Error(
+          'Cannot initialize database encryption. ' +
+          'This is a critical security error. ' +
+          'Please contact support. Error: ' + err.message
+        );
+      }
+
+      logger.warn(
+        'Encryption key could no longer be decrypted by safeStorage (key mismatch). ' +
+        'Regenerating a new key. Previously-encrypted fields must be re-entered.',
+        { error: err.message }
+      );
+
+      // Preserve the unrecoverable key file for forensic / audit purposes.
+      try {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.copyFileSync(keyPathEnc, `${keyPathEnc}.corrupt.${ts}`);
+        logger.info(`Backed up unrecoverable key file to .key.enc.corrupt.${ts}`);
+      } catch (backupErr) {
+        logger.error('Failed to back up corrupt key file', backupErr);
+      }
+
+      ENCRYPTION_KEY = generateAndStoreKey(keyPathEnc);
+      logger.warn(
+        'Encryption key regenerated. Encrypted DB columns (SSN/EIN, FEIN, UI account #, ' +
+        'WC carrier/policy, Stripe keys, caregiver SSN) are now unreadable and must be ' +
+        're-entered in Settings.'
+      );
+    }
+  } else {
+    // First run: generate a new strong key.
+    ENCRYPTION_KEY = generateAndStoreKey(keyPathEnc);
+  }
+
+  // Remove legacy plain text key if it exists (security migration)
+  if (fs.existsSync(keyPath)) {
+    fs.unlinkSync(keyPath);
+    logger.info('Removed legacy plain text encryption key');
+  }
+
+  return ENCRYPTION_KEY;
 }
 
 export function getDatabase(): Database.Database {
@@ -269,6 +325,6 @@ export function decrypt(encryptedText: string): string {
     return decrypted;
   } catch (err: any) {
     logger.error('Decryption failed - encryption key may have changed', err);
-    return '*** DECRYPTION FAILED ***';
+    return DECRYPTION_FAILED_SENTINEL;
   }
 }

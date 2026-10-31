@@ -59,6 +59,41 @@ export const ipcAPI = {
         delete: (id: number): Promise<void> => ipcRenderer.invoke('caregiver:delete', id),
     },
 
+    // Service / Work location address (versioned, effective-dated history per caregiver)
+    serviceAddress: {
+        change: (data: {
+            caregiverId: number;
+            addressLine1: string;
+            addressLine2?: string;
+            city: string;
+            state: string;
+            zip: string;
+            effectiveDate: string;
+            reason?: string;
+        }): Promise<any> => ipcRenderer.invoke('serviceAddress:change', data),
+        getForDate: (caregiverId: number, date: string): Promise<any> => ipcRenderer.invoke('serviceAddress:getForDate', caregiverId, date),
+        getCurrent: (caregiverId: number): Promise<any> => ipcRenderer.invoke('serviceAddress:getCurrent', caregiverId),
+        getHistory: (caregiverId: number): Promise<any[]> => ipcRenderer.invoke('serviceAddress:getHistory', caregiverId),
+        getAffectedDrafts: (caregiverId: number, fromDate: string): Promise<any[]> => ipcRenderer.invoke('serviceAddress:getAffectedDrafts', caregiverId, fromDate),
+    },
+
+    // Colorado SUI rate configuration (employer-specific, effective-dated)
+    suiRate: {
+        getAll: (): Promise<any[]> => ipcRenderer.invoke('suiRate:getAll'),
+        getForDate: (date: string): Promise<any> => ipcRenderer.invoke('suiRate:getForDate', date),
+        getForYear: (year: number): Promise<any> => ipcRenderer.invoke('suiRate:getForYear', year),
+        upsert: (data: {
+            employerId: number;
+            taxYear: number;
+            effectiveDate?: string;
+            uiRate: number;
+            annualWageBase?: number | null;
+            wageBaseConfirmed?: boolean;
+            source?: string;
+            jurisdiction?: string;
+        }): Promise<any> => ipcRenderer.invoke('suiRate:upsert', data),
+    },
+
     // Time Entry
     timeEntry: {
         create: (data: any): Promise<any> => ipcRenderer.invoke('timeEntry:create', data),

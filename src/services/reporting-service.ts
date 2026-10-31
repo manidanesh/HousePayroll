@@ -9,6 +9,7 @@
 import { getDatabase, decrypt } from '../database/db';
 import { BaseRepository } from '../core/base-repository';
 import { EmployerService } from './employer-service';
+import { SuiRateService } from './sui-rate-service';
 import * as crypto from 'crypto';
 
 export interface YTDSummary {
@@ -148,13 +149,19 @@ export class ReportingService extends BaseRepository<any> {
     getTaxCapStatus(year: number, caregiverId?: number): TaxCapStatus[] {
         const ytd = this.getYTDSummary(year, caregiverId);
 
+        // Resolve the Colorado SUI taxable wage base for this tax year (FR-01), falling back to
+        // the legacy employer scalar if no effective-dated rate row is configured.
+        const employer = EmployerService.getEmployer();
+        const suiRate = employer ? SuiRateService.getRateForYear(employer.id, year) : null;
+        const sutaWageBase = (suiRate && suiRate.wageBase) ? suiRate.wageBase : (employer?.suiWageBase || 16000);
+
         return ytd.map(item => ({
             caregiverId: item.caregiverId,
             caregiverName: item.caregiverName,
             futaWages: Math.min(item.grossWages, 7000),
             futaReached: item.grossWages >= 7000,
-            sutaWages: Math.min(item.grossWages, 16000),
-            sutaReached: item.grossWages >= 16000
+            sutaWages: Math.min(item.grossWages, sutaWageBase),
+            sutaReached: item.grossWages >= sutaWageBase
         }));
     }
 

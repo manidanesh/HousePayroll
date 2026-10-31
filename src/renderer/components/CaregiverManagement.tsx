@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { ipcAPI } from '../lib/ipc';
 import { useCaregiver } from '../context/caregiver-context';
 import { RendererSafeCaregiver } from '../../types';
+import ChangeServiceAddressModal from './ChangeServiceAddressModal';
 
 const CaregiverManagement: React.FC = () => {
     const { selectedCaregiver, selectCaregiver } = useCaregiver();
@@ -11,6 +12,7 @@ const CaregiverManagement: React.FC = () => {
     const [editingCaregiver, setEditingCaregiver] = useState<RendererSafeCaregiver | null>(null);
     const [onboardingCaregiver, setOnboardingCaregiver] = useState<RendererSafeCaregiver | null>(null);
     const [viewingHistoryId, setViewingHistoryId] = useState<number | null>(null);
+    const [changingAddressId, setChangingAddressId] = useState<number | null>(null);
     const [showInactive, setShowInactive] = useState(false);
 
     useEffect(() => {
@@ -153,6 +155,12 @@ const CaregiverManagement: React.FC = () => {
                                         </button>
                                         <button
                                             className="btn-small btn-secondary"
+                                            onClick={() => setChangingAddressId(caregiver.id)}
+                                        >
+                                            📍 Service Address
+                                        </button>
+                                        <button
+                                            className="btn-small btn-secondary"
                                             disabled={true}
                                             style={{ opacity: 0.5, cursor: 'not-allowed' }}
                                             title="Stripe Payouts: Future Release. (Employer Funding Source Required)"
@@ -187,6 +195,14 @@ const CaregiverManagement: React.FC = () => {
                     caregiverId={viewingHistoryId}
                     caregiverName={caregivers.find(c => c.id === viewingHistoryId)?.fullLegalName || 'Caregiver'}
                     onClose={() => setViewingHistoryId(null)}
+                />
+            )}
+
+            {changingAddressId && (
+                <ChangeServiceAddressModal
+                    caregiverId={changingAddressId}
+                    caregiverName={caregivers.find(c => c.id === changingAddressId)?.fullLegalName || 'Caregiver'}
+                    onClose={() => setChangingAddressId(null)}
                 />
             )}
         </div>
