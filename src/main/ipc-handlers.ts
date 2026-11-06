@@ -357,7 +357,10 @@ export function registerIpcHandlers() {
             coloradoSutaRate: suiRate.rate,
             coloradoSutaCap: suiRate.wageBase,
             coloradoFamliRate: employer?.coloradoFamliRateEE || 0.0044,
-            coloradoFamliRateER: employer?.coloradoFamliRateER || 0.0044
+            coloradoFamliRateER: employer?.coloradoFamliRateER || 0.0044,
+            // Colorado state income tax is voluntary for household employees — only
+            // withhold if the employer has explicitly enabled income tax withholding.
+            coloradoStateIncomeTaxRate: employer?.federalWithholdingEnabled ? 0.044 : 0
         };
 
         const taxComp = new TaxComputer(rates, taxConfig.version);
@@ -442,6 +445,8 @@ export function registerIpcHandlers() {
             coloradoSutaCap: suiRate.wageBase,
             coloradoFamliRate: employer.coloradoFamliRateEE,
             coloradoFamliRateER: employer.coloradoFamliRateER,
+            // Colorado state income tax is voluntary — only apply if employer enabled withholding.
+            coloradoStateIncomeTaxRate: employer.federalWithholdingEnabled ? 0.044 : 0,
         };
 
         const taxComp = new TaxComputer(rates, taxConfig.version);

@@ -222,7 +222,7 @@ const PayrollProcessing: React.FC = () => {
                 baseHourlyRate: caregiver.hourlyRate,
                 holidayMultiplier: employer.holidayPayMultiplier || 1,
                 weekendMultiplier: employer.weekendPayMultiplier || 1,
-                ytdWagesBefore: ytd.grossWagesYTD || 0
+                ytdWagesBefore: ytd.grossWages || 0
             };
 
             const calculationResult = await ipcAPI.payroll.preview(input);
