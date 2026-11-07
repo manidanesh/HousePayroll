@@ -21,7 +21,6 @@ import { EnhancedPayrollCalculator } from '../core/enhanced-payroll-calculator';
 import { BackupService } from '../services/backup-service';
 import { YearEndService } from '../services/year-end-service';
 import { ColoradoTaxService } from '../services/colorado-tax-service';
-import { W2Service } from '../services/w2-service';
 import { TaxFormService } from '../services/tax-form-service';
 import { TaxNotificationService } from '../services/tax-notification-service';
 import { TaxPaymentService } from '../services/tax-payment-service';
@@ -370,7 +369,9 @@ export function registerIpcHandlers() {
         const caregiver = CaregiverService.getCaregiverById(input.caregiverId);
         let federalWithholdingAmount = 0;
 
-        if (caregiver) {
+        // Federal income tax withholding is voluntary for household employees.
+        // Only compute it when the employer has explicitly enabled withholding.
+        if (caregiver && employer?.federalWithholdingEnabled) {
             // First calculate gross pay
             const prelimResult = calculator.calculatePayroll(input);
 
@@ -384,8 +385,8 @@ export function registerIpcHandlers() {
                 extraWithholding: caregiver.w4ExtraWithholding || 0
             };
 
-            // Get YTD wages
-            const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, new Date().getFullYear());
+            // Get YTD wages using the pay period end year for accuracy
+            const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, payYear);
 
             // Map employer pay frequency to calculator format
             const payFrequency = (employer?.payFrequency === 'bi-weekly'
@@ -456,7 +457,9 @@ export function registerIpcHandlers() {
         const caregiver = CaregiverService.getCaregiverById(input.caregiverId);
         let federalWithholdingAmount = 0;
 
-        if (caregiver) {
+        // Federal income tax withholding is voluntary for household employees.
+        // Only compute it when the employer has explicitly enabled withholding.
+        if (caregiver && employer.federalWithholdingEnabled) {
             // First calculate gross pay
             const prelimResult = calculator.calculatePayroll(input);
 
@@ -470,8 +473,8 @@ export function registerIpcHandlers() {
                 extraWithholding: caregiver.w4ExtraWithholding || 0
             };
 
-            // Get YTD wages
-            const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, new Date().getFullYear());
+            // Get YTD wages using the pay period end year for accuracy
+            const ytdGrossWages = YTDService.getYTDGrossWages(input.caregiverId, payYear);
 
             // Map employer pay frequency to calculator format
             const payFrequency = (employer?.payFrequency === 'bi-weekly'
@@ -706,12 +709,9 @@ export function registerIpcHandlers() {
     });
 
     ipcMain.handle('tax:generateW2', async (_event, year: number, caregiverId: number) => {
+        // Legacy alias → redirect to the official TaxFormService/W2OfficialService path
         const caregiver = CaregiverService.getCaregiverById(caregiverId);
-        const employer = EmployerService.getEmployer();
-
-        if (!caregiver || !employer) {
-            throw new Error('Caregiver or Employer not found');
-        }
+        if (!caregiver) throw new Error('Caregiver not found');
 
         const result = await dialog.showSaveDialog({
             title: `Generate W-2 for ${caregiver.fullLegalName} (${year})`,
@@ -719,11 +719,13 @@ export function registerIpcHandlers() {
             filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
         });
 
-        if (result.filePath) {
-            await W2Service.generateW2PDF(year, caregiver, employer, result.filePath);
-            return { success: true, path: result.filePath };
-        }
-        return { success: false };
+        if (!result.filePath) return { success: false };
+
+        const buffer = await TaxFormService.generateW2Buffer(year, caregiverId);
+        require('fs').writeFileSync(result.filePath, buffer);
+        TaxFormService.logGeneration('W2', year, caregiverId, caregiver.fullLegalName, result.filePath);
+        TaxNotificationService.markGenerated('W-2', year, result.filePath);
+        return { success: true, path: result.filePath };
     });
 
     // System Handlers

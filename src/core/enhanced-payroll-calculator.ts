@@ -78,7 +78,7 @@ export interface EnhancedPayrollResult {
 export class EnhancedPayrollCalculator {
     private taxComputer: TaxComputer;
     private version: string;
-    private readonly COLORADO_MIN_WAGE = 14.42; // 2024 rate
+    private readonly COLORADO_MIN_WAGE = 15.16; // 2026 Colorado statewide minimum wage (CDLE Wage Order)
 
     constructor(taxComputer: TaxComputer, version: string = 'v2.0-compliance') {
         this.taxComputer = taxComputer;

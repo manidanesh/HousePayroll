@@ -187,7 +187,7 @@ export function buildW2FormData(year: number, caregiver: Caregiver, employer: Em
     const ytdRecords = ReportingService.getYTDSummary(year, caregiver.id);
     const data: YTDSummary | undefined = ytdRecords.find(r => r.caregiverId === caregiver.id);
 
-    let ssWageBase = 168600;
+    let ssWageBase = 184500; // 2026 IRS Publication 926 — updated fallback
     try {
         const taxConfig = TaxConfigurationService.getConfigForYear(year);
         if (taxConfig?.ssWageBase) ssWageBase = taxConfig.ssWageBase;

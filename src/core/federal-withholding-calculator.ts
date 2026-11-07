@@ -139,7 +139,7 @@ const PAY_PERIODS_PER_YEAR: Record<PayFrequency, number> = {
 const FICA_RATES = {
     socialSecurity: 0.062,  // 6.2%
     medicare: 0.0145,       // 1.45%
-    socialSecurityWageBase: 176100  // 2025 value, 2026 TBD
+    socialSecurityWageBase: 184500  // 2026 value per IRS Publication 926
 };
 
 /**

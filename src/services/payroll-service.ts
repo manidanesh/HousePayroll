@@ -766,46 +766,49 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
             coloradoSutaCap: manualSuiRate.wageBase,
             coloradoFamliRate: employer.coloradoFamliRateEE,
             coloradoFamliRateER: employer.coloradoFamliRateER,
-            coloradoStateIncomeTaxRate: 0.044
+            // Colorado state income tax is voluntary for household employees — only apply
+            // if the employer has explicitly enabled income tax withholding.
+            coloradoStateIncomeTaxRate: employer.federalWithholdingEnabled ? 0.044 : 0
         };
 
         const taxComputer = new TaxComputer(taxRates, taxConfig.id.toString());
         const taxResult = taxComputer.calculateTaxes(params.grossAmount, ytdGross);
 
         // 4. Setup Federal Calculator
+        // Federal income tax withholding is voluntary for household employees.
         const caregiver = CaregiverService.getCaregiverById(params.caregiverId);
         if (!caregiver) throw new Error('Caregiver not found');
 
-        const w4Info: W4Information = {
-            filingStatus: (caregiver.w4FilingStatus as FilingStatus) || 'single',
-            multipleJobs: caregiver.w4MultipleJobs || false,
-            dependentsAmount: caregiver.w4DependentsAmount || 0,
-            otherIncome: caregiver.w4OtherIncome || 0,
-            deductions: caregiver.w4Deductions || 0,
-            extraWithholding: caregiver.w4ExtraWithholding || 0
-        };
+        let federalWithholdingAmt = 0;
+        if (employer.federalWithholdingEnabled) {
+            const w4Info: W4Information = {
+                filingStatus: (caregiver.w4FilingStatus as FilingStatus) || 'single',
+                multipleJobs: caregiver.w4MultipleJobs || false,
+                dependentsAmount: caregiver.w4DependentsAmount || 0,
+                otherIncome: caregiver.w4OtherIncome || 0,
+                deductions: caregiver.w4Deductions || 0,
+                extraWithholding: caregiver.w4ExtraWithholding || 0
+            };
+            const frequency: PayFrequency = (employer.payFrequency as PayFrequency) || 'weekly';
+            const fedResult = FederalWithholdingCalculator.calculateWithholding(
+                params.grossAmount,
+                frequency,
+                w4Info,
+                ytdGross
+            );
+            federalWithholdingAmt = fedResult.federalWithholding;
+        }
 
-        // Default frequency to weekly for manual checks if unknown
-        const frequency: PayFrequency = (employer.payFrequency as PayFrequency) || 'weekly';
-
-        const fedResult = FederalWithholdingCalculator.calculateWithholding(
-            params.grossAmount,
-            frequency,
-            w4Info,
-            ytdGross
-        );
-
-        // 5. Net Pay
-        // Net = Gross - (Employee Share of Taxes + Federal Withholding + State Tax)
+        // 5. Net Pay = Gross - (Employee taxes + Federal withholding)
         const netPay = params.grossAmount -
             taxResult.totalEmployeeWithholdings -
-            fedResult.federalWithholding;
+            federalWithholdingAmt;
 
         return {
             grossWages: params.grossAmount,
             ssEmployee: taxResult.socialSecurityEmployee,
             medicareEmployee: taxResult.medicareEmployee,
-            federalWithholding: fedResult.federalWithholding,
+            federalWithholding: federalWithholdingAmt,
             coloradoFamliEmployee: taxResult.coloradoFamliEmployee,
             coloradoStateIncomeTax: taxResult.coloradoStateIncomeTax,
             netPay: Math.round(netPay * 100) / 100,
@@ -917,7 +920,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
                     ?, ?, ?,
                     ?, ?, ?,
                     ?, ?, ?,
-                    'manual-1.0', 'CO-2024', 1, 'approved',
+                    'manual-1.0', ?, 1, 'approved',
                     'manual', ?, ?,
                     ?, datetime('now'), ?
                 )
@@ -940,6 +943,7 @@ export class PayrollService extends BaseRepository<PayrollRecord> {
                 manualSuiRate.rate,
                 manualSuiPaid,
                 manualAddrSnapshot,
+                `CO-${new Date(params.payPeriodStart).getFullYear()}`,
                 params.description,
                 params.grossAmount,
                 params.paymentDate || params.payPeriodEnd,

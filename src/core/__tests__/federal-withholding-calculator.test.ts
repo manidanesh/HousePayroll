@@ -108,15 +108,15 @@ describe('FederalWithholdingCalculator', () => {
         it('should respect Social Security wage base cap', () => {
             const w4: W4Information = FederalWithholdingCalculator.createDefaultW4();
 
-            // Employee already earned $176,000 YTD (near cap of $176,100)
+            // Employee already earned $184,400 YTD (near 2026 cap of $184,500)
             const result = FederalWithholdingCalculator.calculateWithholding(
                 949.90,
                 'biweekly',
                 w4,
-                176000
+                184400
             );
 
-            // Only $100 remaining under cap
+            // Only $100 remaining under 2026 cap
             // SS tax: $100 × 6.2% = $6.20
             expect(result.socialSecurityWithholding).toBeCloseTo(6.20, 2);
 

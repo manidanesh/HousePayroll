@@ -15,6 +15,7 @@ import { ReportingService } from './reporting-service';
 import { W2OfficialService } from './w2-official-service';
 import { TaxPaymentService } from './tax-payment-service';
 import { Caregiver } from '../types';
+import { logger } from '../utils/logger';
 
 export type FormType = 'W2' | 'SCHEDULE_H' | 'DR_1093';
 
@@ -67,6 +68,8 @@ export class TaxFormService {
         };
 
         const results: Array<{ caregiverName: string; buffer: Buffer }> = [];
+        const skipped: string[] = [];
+
         for (const cg of caregivers) {
             try {
                 const decryptedCg: Caregiver = { ...cg, ssn: decrypt(cg.ssn) };
@@ -74,9 +77,20 @@ export class TaxFormService {
                 results.push({ caregiverName: cg.fullLegalName, buffer });
                 TaxFormService.logGeneration('W2', year, cg.id, cg.fullLegalName);
             } catch (err) {
-                console.warn(`[TaxFormService] Skipping W-2 for ${cg.fullLegalName}: ${err}`);
+                const reason = err instanceof Error ? err.message : String(err);
+                skipped.push(`${cg.fullLegalName}: ${reason}`);
+                logger.error(`[TaxFormService] W-2 skipped for ${cg.fullLegalName} (${year}): ${reason}`);
             }
         }
+
+        if (skipped.length > 0 && results.length === 0) {
+            throw new Error(`All W-2 generations failed:\n${skipped.join('\n')}`);
+        }
+        if (skipped.length > 0) {
+            // Partial success — log but return what succeeded
+            logger.warn(`[TaxFormService] W-2 batch: ${results.length} succeeded, ${skipped.length} skipped:\n${skipped.join('\n')}`);
+        }
+
         return results;
     }
 

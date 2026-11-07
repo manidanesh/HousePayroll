@@ -153,7 +153,7 @@ export class TaxComputer {
     }
 
     calculateColoradoSUTA(grossWages: number, ytdWagesBefore: number): number {
-        const SUTA_CAP = this.rates.coloradoSutaCap || 16000;
+        const SUTA_CAP = this.rates.coloradoSutaCap || 30600; // CO SUI taxable wage base 2026 (CDLE)
         const sutaRate = this.rates.coloradoSutaRate || 0;
         const remainingCap = Math.max(0, SUTA_CAP - ytdWagesBefore);
         const taxableWages = Math.min(grossWages, remainingCap);
@@ -161,14 +161,14 @@ export class TaxComputer {
     }
 
     calculateColoradoFAMLIEmployee(grossWages: number): number {
-        const famliRate = this.rates.coloradoFamliRate || 0.0045;
+        const famliRate = this.rates.coloradoFamliRate || 0.0044; // 2026 FAMLI EE rate (famli.colorado.gov)
         return this.round(grossWages * famliRate);
     }
 
     calculateColoradoFAMLIEmployer(grossWages: number): number {
         // Use the configured employer share (defaulting to 0.45% per user request)
         // Rate is actually passed in via TaxRates (added in interface update below)
-        const famliRateER = (this.rates as any).coloradoFamliRateER || 0.0045;
+        const famliRateER = (this.rates as any).coloradoFamliRateER || 0.0044; // 2026 FAMLI ER rate (famli.colorado.gov)
         return this.round(grossWages * famliRateER);
     }
 

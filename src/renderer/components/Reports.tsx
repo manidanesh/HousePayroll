@@ -147,6 +147,7 @@ const Reports: React.FC = () => {
     const handleGenerateW2 = async (caregiverId: number, caregiverName: string) => {
         setExporting(true);
         try {
+            // Use the official TaxFormService path (fills the real IRS W-2 form)
             const result = await ipcAPI.tax.generateW2(year, caregiverId);
             if (result.success) {
                 setSuccessModal({
